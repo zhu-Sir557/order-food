@@ -1,0 +1,49 @@
+# === Build Artifacts ===
+backend/target/
+frontend-h5/dist/
+frontend-admin/dist/
+**/*.jar
+**/*.war
+
+# === Dependencies ===
+node_modules/
+frontend-h5/node_modules/
+frontend-admin/node_modules/
+
+# === IDE ===
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Logs ===
+*.log
+logs/
+backend/logs/
+
+# === WorkBuddy ===
+.workbuddy/
+
+# === Environment / Secrets ===
+.env
+.env.local
+*.credentials
+.credentials
+
+# === Uploads (runtime data) ===
+uploads/
+
+# === Misc ===
+*.tar.gz
+*.bak
+*.tmp
+nul

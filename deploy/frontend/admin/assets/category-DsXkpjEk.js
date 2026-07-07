@@ -1,0 +1,1 @@
+import{s as e}from"./request-DKeE9th7.js";function i(){return e.get("/api/admin/categories")}function o(t){return e.post("/api/admin/categories",t)}function n(t,a){return e.put(`/api/admin/categories/${t}`,a)}function s(t){return e.delete(`/api/admin/categories/${t}`)}function u(t){return e.put("/api/admin/categories/sort",{items:t})}export{n as a,o as b,s as d,i as g,u};

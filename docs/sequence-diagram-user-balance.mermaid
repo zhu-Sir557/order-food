@@ -1,0 +1,250 @@
+%% ============================================
+%% 时序图：用户注册登录 + 余额点卡支付模块
+%% 包含4个核心流程：注册、登录+滑块验证、点卡兑换、余额支付
+%% ============================================
+
+%% ============================================
+%% 流程1：注册流程
+%% ============================================
+
+sequenceDiagram
+    autonumber
+    participant FE as H5前端
+    participant MA as H5MemberAuthController
+    participant MS as MemberAuthServiceImpl
+    participant MM as MemberMapper
+    participant JU as JwtUtil
+    participant DB as MySQL
+
+    Note over FE: App启动时已自动创建临时用户<br/>获得 role=CUSTOMER 的JWT
+    Note over FE: Header: Bearer <tempUserJWT>
+
+    FE->>MA: POST /api/h5/member/register<br/>{username, password}
+    Note over MA: CustomerAuthInterceptor 拦截该路径<br/>校验 role=CUSTOMER<br/>设置 request.tempUserId
+    Note over MA: MemberAuthInterceptor 排除该路径<br/>(不需要会员认证)
+
+    MA->>MS: register(dto, tempUserId)
+    MS->>MM: SELECT * FROM member WHERE username=?
+    MM->>DB: SELECT
+    DB-->>MM: 无记录
+
+    alt 用户名已存在
+        MS-->>MA: throw BizException("账户名已存在")
+        MA-->>FE: Result.error(400, "账户名已存在")
+    else 用户名可用
+        MS->>MS: passwordEncoder.encode(password)
+        MS->>MS: new Member(username, encodedPassword, balance=0, tempUserId)
+        MS->>MM: INSERT INTO member(...)
+        MM->>DB: INSERT
+        MS->>JU: generateToken(memberId, {role=MEMBER, tempUserId=member.tempUserId})
+        JU-->>MS: memberJWT
+        MS->>MS: 构建 MemberLoginVO(token, memberId, username, balance=0)
+        MS-->>MA: MemberLoginVO
+        MA-->>FE: Result.success(MemberLoginVO)
+        Note over FE: localStorage('token') = memberJWT<br/>localStorage('memberId') = memberId<br/>localStorage('memberUsername') = username<br/>localStorage('memberBalance') = 0
+        Note over FE: 跳转首页
+    end
+
+
+%% ============================================
+%% 流程2：登录 + 滑块验证流程
+%% ============================================
+
+sequenceDiagram
+    autonumber
+    participant FE as H5前端
+    participant CC as H5CaptchaController
+    participant CS as CaptchaServiceImpl
+    participant CU as CaptchaUtil
+    participant MA as H5MemberAuthController
+    participant MS as MemberAuthServiceImpl
+    participant MM as MemberMapper
+    participant JU as JwtUtil
+    participant DB as MySQL
+
+    Note over FE: 步骤1: 获取滑块验证图
+    FE->>CC: GET /api/h5/captcha/slider
+    Note over CC: 无需认证
+    CC->>CS: generateSliderCaptcha()
+    CS->>CU: CaptchaUtil.generate()
+    CU-->>CS: {bgImageBase64, puzzleImageBase64, correctX, y=60}
+    CS->>CS: 生成 captchaId(UUID)<br/>存储 captchaStore.put(captchaId,<br/>CaptchaInfo(correctX, verified=false, createTime))
+    CS-->>CC: SliderCaptchaVO(captchaId, bgImage, puzzleImage, y=60)
+    CC-->>FE: Result.success(SliderCaptchaVO)
+
+    Note over FE: 步骤2: 用户拖拽滑块完成验证
+    FE->>CC: POST /api/h5/captcha/slider/check<br/>{captchaId, xOffset}
+    CC->>CS: checkSlider(captchaId, xOffset)
+    CS->>CS: 查找 captchaInfo
+
+    alt 验证码不存在或已过期
+        CS-->>CC: CaptchaCheckVO(success=false, captchaToken=null)
+        CC-->>FE: Result.success({success: false})
+    else 偏移量超出容差(±5px)
+        CS-->>CC: CaptchaCheckVO(success=false, captchaToken=null)
+        CC-->>FE: Result.success({success: false})
+    else 偏移量正确
+        CS->>CS: captchaInfo.verified = true
+        CS-->>CC: CaptchaCheckVO(success=true, captchaToken=captchaId)
+        CC-->>FE: Result.success({success: true, captchaToken: "xxx"})
+    end
+
+    Note over FE: 步骤3: 提交登录表单
+    FE->>MA: POST /api/h5/member/login<br/>{username, password, captchaToken}
+    Note over MA: 无需认证(排除拦截)
+    MA->>MS: login(dto)
+    MS->>CS: verifyAndConsumeCaptcha(captchaToken)
+
+    alt captchaToken无效或未验证
+        MS-->>MA: throw BizException("验证码无效或未通过")
+        MA-->>FE: Result.error(400, "验证码无效或未通过")
+    else captchaToken有效
+        MS->>CS: 删除captchaInfo(一次性消费)
+        MS->>MM: SELECT * FROM member WHERE username=?
+        MM->>DB: SELECT
+
+        alt 用户不存在
+            MS-->>MA: throw BizException("账户名或密码错误")
+            MA-->>FE: Result.error(400, "账户名或密码错误")
+        else 密码错误
+            MS->>MS: passwordEncoder.matches(raw, stored) = false
+            MS-->>MA: throw BizException("账户名或密码错误")
+            MA-->>FE: Result.error(400, "账户名或密码错误")
+        else 认证成功
+            MS->>JU: generateToken(memberId, {role=MEMBER, tempUserId=member.tempUserId})
+            JU-->>MS: memberJWT
+            MS-->>MA: MemberLoginVO(token, memberId, username, balance)
+            MA-->>FE: Result.success(MemberLoginVO)
+            Note over FE: localStorage('token') = memberJWT<br/>localStorage('memberId') = memberId<br/>localStorage('memberUsername') = username<br/>localStorage('memberBalance') = balance
+            Note over FE: 跳转首页
+        end
+    end
+
+
+%% ============================================
+%% 流程3：点卡兑换流程
+%% ============================================
+
+sequenceDiagram
+    autonumber
+    participant FE as H5前端
+    participant MC as H5MemberController
+    participant MS as MemberServiceImpl
+    participant RCS as RechargeCardServiceImpl
+    participant BRS as BalanceRecordServiceImpl
+    participant MM as MemberMapper
+    participant CM as RechargeCardMapper
+    participant BRM as BalanceRecordMapper
+    participant DB as MySQL
+
+    Note over FE: 用户已登录为会员
+    Note over FE: Header: Bearer <memberJWT>
+
+    FE->>MC: POST /api/h5/member/redeem<br/>{cardNo, cardPassword}
+    Note over MC: MemberAuthInterceptor 校验 role=MEMBER<br/>设置 request.memberId
+
+    MC->>MS: redeemCard(memberId, dto)
+
+    Note over MS: @Transactional(rollbackFor=Exception.class)
+
+    MS->>RCS: findByCardNoAndPassword(cardNo, cardPassword)
+    RCS->>CM: SELECT * FROM recharge_card<br/>WHERE card_no=? AND card_password=? AND deleted=0
+    CM->>DB: SELECT
+
+    alt 卡号或卡密错误(查不到)
+        RCS-->>MS: null
+        MS-->>MC: throw BizException("卡号或卡密错误")
+        MC-->>FE: Result.error(400, "卡号或卡密错误")
+    else 卡状态≠已发放(UNUSED或USED)
+        RCS-->>MS: card (status != ASSIGNED)
+        MS-->>MC: throw BizException("该卡不可用或已被使用")
+        MC-->>FE: Result.error(400, "该卡不可用或已被使用")
+    else 卡有效(status=ASSIGNED)
+        RCS-->>MS: card (status=ASSIGNED, amount=100.00)
+        MS->>MM: SELECT * FROM member WHERE id=memberId
+        MM->>DB: SELECT
+        MM-->>MS: member (balance=50.00)
+        MS->>MS: newBalance = 50.00 + 100.00 = 150.00
+        MS->>MM: UPDATE member SET balance=150.00 WHERE id=memberId
+        MM->>DB: UPDATE
+        MS->>CM: UPDATE recharge_card<br/>SET status=2(USED), used_at=NOW()<br/>WHERE id=card.id
+        CM->>DB: UPDATE
+        MS->>BRS: recordRecharge(memberId, 100.00, 150.00, card.cardNo)
+        BRS->>BRM: INSERT INTO balance_record<br/>(member_id, type=1, amount=100.00,<br/>balance_after=150.00, card_no=xxx)
+        BRM->>DB: INSERT
+        MS-->>MC: void (成功)
+        MC-->>FE: Result.success()
+        Note over FE: 刷新本地 memberBalance<br/>显示"兑换成功，余额：¥150.00"
+    end
+
+
+%% ============================================
+%% 流程4：余额支付流程
+%% ============================================
+
+sequenceDiagram
+    autonumber
+    participant FE as H5前端
+    participant OC as H5OrderController
+    participant OS as OrderServiceImpl
+    participant BRS as BalanceRecordServiceImpl
+    participant MM as MemberMapper
+    participant OM as OrderInfoMapper
+    participant TM as DiningTableMapper
+    participant BRM as BalanceRecordMapper
+    participant DB as MySQL
+
+    Note over FE: 用户已登录为会员
+    Note over FE: 订单状态=PENDING_PAY(0)
+    Note over FE: Header: Bearer <memberJWT>
+
+    FE->>OC: POST /api/h5/orders/{id}/pay/balance
+    Note over OC: CustomerAuthInterceptor 拦截 /api/h5/orders/**<br/>校验 role=MEMBER(已修改接受MEMBER)<br/>设置 request.tempUserId, request.memberId
+    Note over OC: MemberAuthInterceptor 也拦截该路径<br/>(额外配置 /api/h5/orders/*/pay/balance)<br/>校验 role=MEMBER
+
+    OC->>OS: payByBalance(orderId, memberId)
+
+    Note over OS: @Transactional(rollbackFor=Exception.class)
+
+    OS->>OM: SELECT * FROM order_info WHERE id=?
+    OM->>DB: SELECT
+    OM-->>OS: order (status=0, totalAmount=88.00, memberId=xxx)
+
+    alt 订单不存在
+        OS-->>OC: throw BizException("订单不存在")
+        OC-->>FE: Result.error(400, "订单不存在")
+    else 订单状态≠待支付
+        OS-->>OC: throw BizException("订单状态不允许支付")
+        OC-->>FE: Result.error(400, "订单状态不允许支付")
+    else 订单不属于该会员
+        OS-->>OC: throw BizException("无权操作此订单")
+        OC-->>FE: Result.error(400, "无权操作此订单")
+    else 校验通过
+        OS->>MM: SELECT * FROM member WHERE id=memberId
+        MM->>DB: SELECT
+        MM-->>OS: member (balance=100.00)
+
+        alt 余额不足(balance < totalAmount)
+            OS-->>OC: throw BizException("余额不足，当前余额：¥100.00")
+            Note over OS: 事务自动回滚
+            OC-->>FE: Result.error(400, "余额不足，当前余额：¥100.00")
+        else 余额充足(balance >= totalAmount)
+            OS->>MM: UPDATE member SET balance=balance-88.00<br/>WHERE id=memberId
+            MM->>DB: UPDATE
+            Note over OS: newBalance = 100.00 - 88.00 = 12.00
+
+            OS->>OM: UPDATE order_info<br/>SET status=1(PENDING_ACCEPT),<br/>pay_method=3(BALANCE)<br/>WHERE id=orderId
+            OM->>DB: UPDATE
+
+            OS->>TM: UPDATE dining_table SET status=1(就餐中)<br/>WHERE id=order.tableId
+            TM->>DB: UPDATE
+
+            OS->>BRS: recordConsume(memberId, 88.00, 12.00,<br/>order.orderNo, orderId)
+            BRS->>BRM: INSERT INTO balance_record<br/>(member_id, type=2, amount=88.00,<br/>balance_after=12.00, order_no=xxx,<br/>order_id=xxx)
+            BRM->>DB: INSERT
+
+            OS-->>OC: void (成功)
+            OC-->>FE: Result.success()
+            Note over FE: 更新本地 memberBalance = 12.00<br/>显示支付成功动画<br/>跳转订单详情页
+        end
+    end

@@ -1,0 +1,363 @@
+%% ============================================
+%% 类图：用户注册登录 + 余额点卡支付模块
+%% ============================================
+
+classDiagram
+    direction TB
+
+    %% ===== Entity 层 =====
+    class Member {
+        -Long id
+        -String username
+        -String password
+        -BigDecimal balance
+        -Long tempUserId
+        -LocalDateTime createTime
+        -LocalDateTime updateTime
+        -Integer deleted
+    }
+
+    class RechargeCard {
+        -Long id
+        -String cardNo
+        -String cardPassword
+        -BigDecimal amount
+        -Integer status
+        -Long memberId
+        -LocalDateTime assignedAt
+        -LocalDateTime usedAt
+        -LocalDateTime createTime
+        -LocalDateTime updateTime
+        -Integer deleted
+    }
+
+    class BalanceRecord {
+        -Long id
+        -Long memberId
+        -Integer type
+        -BigDecimal amount
+        -BigDecimal balanceAfter
+        -String cardNo
+        -String orderNo
+        -Long orderId
+        -String remark
+        -LocalDateTime createTime
+        -Integer deleted
+    }
+
+    class OrderInfo {
+        -Long id
+        -String orderNo
+        -Long tempUserId
+        -Long memberId
+        -Long tableId
+        -String tableCode
+        -BigDecimal totalAmount
+        -Integer status
+        -Integer payMethod
+        -String remark
+        -LocalDateTime createTime
+        -LocalDateTime updateTime
+        -Integer deleted
+    }
+
+    %% ===== Enum 层 =====
+    class CardStatus {
+        <<enumeration>>
+        +UNUSED int = 0
+        +ASSIGNED int = 1
+        +USED int = 2
+        +fromCode(int) CardStatus
+    }
+
+    class PayMethod {
+        <<enumeration>>
+        +WECHAT int = 1
+        +ALIPAY int = 2
+        +BALANCE int = 3
+        +fromCode(int) PayMethod
+    }
+
+    class BalanceRecordType {
+        <<enumeration>>
+        +RECHARGE int = 1
+        +CONSUME int = 2
+        +fromCode(int) BalanceRecordType
+    }
+
+    %% ===== DTO 层 =====
+    class MemberRegisterDTO {
+        +String username
+        +String password
+    }
+
+    class MemberLoginDTO {
+        +String username
+        +String password
+        +String captchaToken
+    }
+
+    class SliderCaptchaCheckDTO {
+        +String captchaId
+        +Integer xOffset
+    }
+
+    class RedeemCardDTO {
+        +String cardNo
+        +String cardPassword
+    }
+
+    class BatchCreateCardDTO {
+        +BigDecimal amount
+        +Integer count
+    }
+
+    class AssignCardDTO {
+        +Long memberId
+    }
+
+    class CardQueryDTO {
+        +Integer status
+        +String cardNo
+        +Integer page
+        +Integer size
+    }
+
+    %% ===== VO 层 =====
+    class SliderCaptchaVO {
+        +String captchaId
+        +String backgroundImage
+        +String puzzleImage
+        +Integer y
+    }
+
+    class CaptchaCheckVO {
+        +Boolean success
+        +String captchaToken
+    }
+
+    class MemberLoginVO {
+        +String token
+        +Long memberId
+        +String username
+        +BigDecimal balance
+    }
+
+    class MemberInfoVO {
+        +Long memberId
+        +String username
+        +BigDecimal balance
+        +String createTime
+    }
+
+    class BalanceRecordVO {
+        +Long id
+        +Integer type
+        +String typeText
+        +BigDecimal amount
+        +BigDecimal balanceAfter
+        +String cardNo
+        +String orderNo
+        +String remark
+        +String createTime
+    }
+
+    class CardVO {
+        +Long id
+        +String cardNo
+        +String cardPassword
+        +BigDecimal amount
+        +Integer status
+        +String statusText
+        +Long memberId
+        +String memberName
+        +String assignedAt
+        +String usedAt
+        +String createTime
+    }
+
+    class AdminMemberVO {
+        +Long id
+        +String username
+        +BigDecimal balance
+        +String createTime
+    }
+
+    %% ===== Service 层 =====
+    class CaptchaService {
+        <<interface>>
+        +generateSliderCaptcha() SliderCaptchaVO
+        +checkSlider(String captchaId, Integer xOffset) CaptchaCheckVO
+        +verifyAndConsumeCaptcha(String captchaToken) boolean
+    }
+
+    class CaptchaServiceImpl {
+        -ConcurrentHashMap captchaStore
+        -CaptchaUtil captchaUtil
+        +generateSliderCaptcha() SliderCaptchaVO
+        +checkSlider(String captchaId, Integer xOffset) CaptchaCheckVO
+        +verifyAndConsumeCaptcha(String captchaToken) boolean
+        -cleanupExpiredCaptchas() void
+    }
+
+    class MemberAuthService {
+        <<interface>>
+        +register(MemberRegisterDTO dto, Long tempUserId) MemberLoginVO
+        +login(MemberLoginDTO dto) MemberLoginVO
+    }
+
+    class MemberAuthServiceImpl {
+        -MemberMapper memberMapper
+        -JwtUtil jwtUtil
+        -BCryptPasswordEncoder passwordEncoder
+        -CaptchaService captchaService
+        +register(MemberRegisterDTO dto, Long tempUserId) MemberLoginVO
+        +login(MemberLoginDTO dto) MemberLoginVO
+        -generateMemberToken(Member member) String
+    }
+
+    class MemberService {
+        <<interface>>
+        +getMemberInfo(Long memberId) MemberInfoVO
+        +redeemCard(Long memberId, RedeemCardDTO dto) void
+        +getBalanceRecords(Long memberId, Integer page, Integer size) PageResult
+    }
+
+    class MemberServiceImpl {
+        -MemberMapper memberMapper
+        -RechargeCardMapper cardMapper
+        -BalanceRecordService balanceRecordService
+        +getMemberInfo(Long memberId) MemberInfoVO
+        +redeemCard(Long memberId, RedeemCardDTO dto) void
+        +getBalanceRecords(Long memberId, Integer page, Integer size) PageResult
+    }
+
+    class RechargeCardService {
+        <<interface>>
+        +batchCreateCards(BatchCreateCardDTO dto) List
+        +getCardPage(CardQueryDTO dto) PageResult
+        +assignCard(Long cardId, AssignCardDTO dto) void
+        +findByCardNoAndPassword(String cardNo, String password) RechargeCard
+    }
+
+    class RechargeCardServiceImpl {
+        -RechargeCardMapper cardMapper
+        -MemberMapper memberMapper
+        +batchCreateCards(BatchCreateCardDTO dto) List
+        +getCardPage(CardQueryDTO dto) PageResult
+        +assignCard(Long cardId, AssignCardDTO dto) void
+        +findByCardNoAndPassword(String cardNo, String password) RechargeCard
+        -generateCardNo() String
+        -generateCardPassword() String
+    }
+
+    class BalanceRecordService {
+        <<interface>>
+        +recordRecharge(Long memberId, BigDecimal amount, BigDecimal balanceAfter, String cardNo) void
+        +recordConsume(Long memberId, BigDecimal amount, BigDecimal balanceAfter, String orderNo, Long orderId) void
+        +getRecordsByMember(Long memberId, Integer page, Integer size) PageResult
+    }
+
+    class BalanceRecordServiceImpl {
+        -BalanceRecordMapper recordMapper
+        +recordRecharge(Long memberId, BigDecimal amount, BigDecimal balanceAfter, String cardNo) void
+        +recordConsume(Long memberId, BigDecimal amount, BigDecimal balanceAfter, String orderNo, Long orderId) void
+        +getRecordsByMember(Long memberId, Integer page, Integer size) PageResult
+    }
+
+    class OrderService {
+        <<interface>>
+        +submitOrder(OrderSubmitDTO dto, Long tempUserId, Long memberId) OrderDetailVO
+        +payOrder(Long id, Integer payMethod) void
+        +payByBalance(Long id, Long memberId) void
+    }
+
+    %% ===== Controller 层 =====
+    class H5CaptchaController {
+        +getSliderCaptcha() Result
+        +checkSlider(SliderCaptchaCheckDTO dto) Result
+    }
+
+    class H5MemberAuthController {
+        +register(MemberRegisterDTO dto, HttpServletRequest req) Result
+        +login(MemberLoginDTO dto) Result
+    }
+
+    class H5MemberController {
+        +getMemberInfo(HttpServletRequest req) Result
+        +redeemCard(RedeemCardDTO dto, HttpServletRequest req) Result
+        +getBalanceRecords(HttpServletRequest req, Integer page, Integer size) Result
+    }
+
+    class AdminCardController {
+        +batchCreate(BatchCreateCardDTO dto) Result
+        +getCardList(CardQueryDTO dto) Result
+        +assignCard(Long id, AssignCardDTO dto) Result
+    }
+
+    class AdminMemberController {
+        +getMemberList(Integer page, Integer size, String keyword) Result
+        +getMemberBalanceRecords(Long id, Integer page, Integer size) Result
+    }
+
+    class H5OrderController {
+        +submitOrder(OrderSubmitDTO dto, HttpServletRequest req) Result
+        +payOrder(Long id, Integer payMethod) Result
+        +payByBalance(Long id, HttpServletRequest req) Result
+    }
+
+    %% ===== Interceptor 层 =====
+    class MemberAuthInterceptor {
+        -JwtUtil jwtUtil
+        +preHandle(HttpServletRequest req, HttpServletResponse resp, Object handler) boolean
+    }
+
+    class CustomerAuthInterceptor {
+        -JwtUtil jwtUtil
+        +preHandle(HttpServletRequest req, HttpServletResponse resp, Object handler) boolean
+    }
+
+    %% ===== Util 层 =====
+    class CaptchaUtil {
+        +generate() SliderCaptchaResult
+        -createBackground(int w, int h) BufferedImage
+        -cutPuzzle(BufferedImage bg, int x, int y, int size) BufferedImage
+    }
+
+    %% ===== Relationships =====
+    CaptchaServiceImpl ..|> CaptchaService
+    MemberAuthServiceImpl ..|> MemberAuthService
+    MemberServiceImpl ..|> MemberService
+    RechargeCardServiceImpl ..|> RechargeCardService
+    BalanceRecordServiceImpl ..|> BalanceRecordService
+
+    MemberAuthServiceImpl --> CaptchaService : 调用验证码校验
+    MemberAuthServiceImpl --> Member : 操作
+    MemberServiceImpl --> RechargeCardService : 查询点卡
+    MemberServiceImpl --> BalanceRecordService : 记录充值
+    MemberServiceImpl --> Member : 操作
+    RechargeCardServiceImpl --> RechargeCard : 操作
+    BalanceRecordServiceImpl --> BalanceRecord : 操作
+
+    H5CaptchaController --> CaptchaService
+    H5MemberAuthController --> MemberAuthService
+    H5MemberController --> MemberService
+    AdminCardController --> RechargeCardService
+    AdminMemberController --> MemberService
+    AdminMemberController --> BalanceRecordService
+    H5OrderController --> OrderService
+
+    OrderService --> Member : 余额扣减
+    OrderService --> BalanceRecordService : 记录消费
+    OrderService --> OrderInfo : 状态变更
+
+    CaptchaServiceImpl --> CaptchaUtil : 生成图片
+    MemberAuthInterceptor --> JwtUtil : 解析Token
+    CustomerAuthInterceptor --> JwtUtil : 解析Token
+
+    RechargeCard --> CardStatus : 状态枚举
+    OrderInfo --> PayMethod : 支付方式枚举
+    BalanceRecord --> BalanceRecordType : 记录类型枚举
+    Member --> OrderInfo : 1:N 下单
+    Member --> BalanceRecord : 1:N 余额记录
+    Member --> RechargeCard : 1:N 发放/使用

@@ -1,0 +1,125 @@
+%% ============================================================
+%% 智能点餐系统 — 核心实体类关系图
+%% 项目: order_food
+%% ============================================================
+
+classDiagram
+    class AdminUser {
+        -Long id
+        -String username
+        -String password
+        -String name
+        -String avatar
+        -Integer status
+        -LocalDateTime createTime
+        -LocalDateTime updateTime
+    }
+
+    class Category {
+        -Long id
+        -String name
+        -Integer sort
+        -Integer status
+        -LocalDateTime createTime
+        -LocalDateTime updateTime
+    }
+
+    class Dish {
+        -Long id
+        -Long categoryId
+        -String name
+        -BigDecimal price
+        -String image
+        -String description
+        -Integer status
+        -Integer stock
+        -LocalDateTime createTime
+        -LocalDateTime updateTime
+    }
+
+    class DiningTable {
+        -Long id
+        -String code
+        -String name
+        -Integer capacity
+        -Integer status
+        -LocalDateTime createTime
+        -LocalDateTime updateTime
+    }
+
+    class TempUser {
+        -Long id
+        -String token
+        -Long tableId
+        -LocalDateTime createTime
+    }
+
+    class OrderInfo {
+        -Long id
+        -String orderNo
+        -Long tempUserId
+        -Long tableId
+        -String tableCode
+        -BigDecimal totalAmount
+        -String remark
+        -Integer status
+        -LocalDateTime payTime
+        -LocalDateTime acceptTime
+        -LocalDateTime completeTime
+        -LocalDateTime createTime
+        -LocalDateTime updateTime
+    }
+
+    class OrderItem {
+        -Long id
+        -Long orderId
+        -Long dishId
+        -String dishName
+        -String dishImage
+        -BigDecimal price
+        -Integer quantity
+        -BigDecimal amount
+        -LocalDateTime createTime
+    }
+
+    class OrderStatus {
+        <<enumeration>>
+        PENDING_PAYMENT(0)
+        PENDING_ACCEPT(1)
+        COOKING(2)
+        COMPLETED(3)
+        PICKED_UP(4)
+        CANCELLED(5)
+        +canTransitTo(OrderStatus) boolean
+    }
+
+    class DishService {
+        <<interface>>
+        +PageResult pageQuery(DishQueryDTO) PageResult
+        +void save(DishSaveDTO)
+        +void update(Long, DishSaveDTO)
+        +void delete(Long)
+        +void toggleStatus(Long)
+        +List~DishVO~ listByCategory(Long)
+    }
+
+    class OrderService {
+        <<interface>>
+        +OrderDetailVO submitOrder(OrderSubmitDTO) OrderDetailVO
+        +void payOrder(Long)
+        +void updateStatus(Long, Integer)
+        +PageResult pageQuery(OrderQueryDTO) PageResult
+        +OrderDetailVO getDetail(Long)
+        +List~OrderDetailVO~ listByTempUser(Long)
+    }
+
+    Category "1" --> "*" Dish : contains
+    OrderInfo "1" --> "*" OrderItem : contains
+    OrderInfo "*" --> "1" TempUser : belongs_to
+    OrderInfo "*" --> "0..1" DiningTable : uses
+    Dish "*" --> "1" Category : categorized_by
+    OrderItem "*" --> "1" Dish : references
+    OrderService ..> OrderInfo : manages
+    OrderService ..> OrderItem : manages
+    DishService ..> Dish : manages
+    OrderInfo ..> OrderStatus : has_state

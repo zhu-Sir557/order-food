@@ -1,0 +1,102 @@
+:root {
+  /* === Element Plus 主题覆盖 === */
+  --el-color-primary: #ff6034;
+  --el-color-primary-light-3: #ff8a65;
+  --el-color-primary-light-5: #ffa784;
+  --el-color-primary-light-7: #ffd0bf;
+  --el-color-primary-light-8: #ffe4d7;
+  --el-color-primary-light-9: #fff5f0;
+  --el-color-primary-dark-2: #e54d2e;
+
+  /* === 语义色 === */
+  --el-color-success: #07c160;
+  --el-color-warning: #ff9f2c;
+  --el-color-danger: #ee0a24;
+
+  /* === 中性色 === */
+  --color-text-primary: #1a1a1a;
+  --color-text-regular: #4a4a4a;
+  --color-text-secondary: #8a8a8a;
+
+  /* === 背景色 === */
+  --color-bg-page: #f5f6fa;
+  --color-bg-card: #ffffff;
+  --color-sidebar-bg: #2b2d3a;
+  --color-sidebar-logo: #232530;
+
+  /* === 边框/分割线 === */
+  --color-border: #ebebed;
+  --color-divider: #f2f3f5;
+
+  /* === 间距变量 === */
+  --space-page-x: 24px;
+  --space-card-y: 16px;
+  --space-card-inner: 20px 24px;
+  --space-component: 12px;
+  --space-btn-group: 12px;
+
+  /* === 阴影变量 === */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 2px 12px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
+  font-size: 14px;
+  color: var(--color-text-primary);
+  background-color: #f5f6fa;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+.el-main {
+  padding: 24px;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 96, 52, 0.3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 96, 52, 0.5);
+}
+
+::-webkit-scrollbar-track {
+  background: #f0f0f0;
+}
+
+/* 空状态样式 */
+.el-empty {
+  --el-empty-padding: 40px 0;
+}
+
+.el-empty__description {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}

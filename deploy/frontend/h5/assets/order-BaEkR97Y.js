@@ -1,0 +1,1 @@
+import{K as e}from"./index-tRSamyFw.js";function s(r){return e.post("/api/h5/orders",r)}function n(r,a){return e.post(`/api/h5/orders/${r}/pay`,null,{params:{payMethod:a}})}function o(r){return e.post(`/api/h5/orders/${r}/pay/balance`)}function p(r){return e.get("/api/h5/orders",{params:r})}function i(r){return e.get(`/api/h5/orders/${r}`)}export{i as a,n as b,p as g,o as p,s};

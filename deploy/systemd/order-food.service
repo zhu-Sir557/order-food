@@ -1,0 +1,20 @@
+[Unit]
+Description=Order Food Backend Service
+After=network.target mysqld.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/order-food/backend
+ExecStart=/usr/bin/java -Xms128m -Xmx384m -XX:MaxMetaspaceSize=128m \
+    -jar /opt/order-food/backend/order-food-backend-1.0.0.jar \
+    --spring.profiles.active=prod \
+    --spring.config.additional-location=file:/opt/order-food/config/
+ExecStop=/bin/kill -TERM $MAINPID
+Restart=always
+RestartSec=10
+StandardOutput=append:/opt/order-food/logs/stdout.log
+StandardError=append:/opt/order-food/logs/stderr.log
+
+[Install]
+WantedBy=multi-user.target
