@@ -37,6 +37,7 @@ backend/logs/
 .env
 .env.local
 .deploy.env
+deploy/deploy.py
 *.credentials
 .credentials
 application-local.yml
