@@ -38,6 +38,8 @@ backend/logs/
 .env.local
 *.credentials
 .credentials
+application-local.yml
+application-local.properties
 
 # === Uploads (runtime data) ===
 uploads/
