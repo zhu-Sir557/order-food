@@ -36,6 +36,7 @@ backend/logs/
 # === Environment / Secrets ===
 .env
 .env.local
+.deploy.env
 *.credentials
 .credentials
 application-local.yml
@@ -48,4 +49,6 @@ uploads/
 *.tar.gz
 *.bak
 *.tmp
+__pycache__/
+*.pyc
 nul
