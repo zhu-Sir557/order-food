@@ -1,0 +1,11 @@
+# 改了后端 Java 代码
+python deploy/deploy.py backend
+
+# 改了前端 H5 或 Admin
+python deploy/deploy.py frontend
+
+# 前后端都改了（或者不确定改了啥）
+python deploy/deploy.py all
+
+# 啥参数都不带，默认全量部署
+python deploy/deploy.py

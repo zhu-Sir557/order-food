@@ -97,14 +97,14 @@ const sidebarRefs = ref<HTMLElement[]>([])
 let isProgrammaticScroll = false
 
 /** 设置分类区块的ref引用 */
-const setSectionRef = (el: Element | null, index: number): void => {
+const setSectionRef = (el: any, index: number): void => {
   if (el) {
     sectionRefs.value[index] = el as HTMLElement
   }
 }
 
 /** 设置左侧分类项的ref引用 */
-const setSidebarRef = (el: Element | null, index: number): void => {
+const setSidebarRef = (el: any, index: number): void => {
   if (el) {
     sidebarRefs.value[index] = el as HTMLElement
   }
