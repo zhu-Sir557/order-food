@@ -135,7 +135,7 @@ const recordQuery = reactive({
   size: 10,
 })
 
-const openRecordDialog = (member: AdminMember): void => {
+const openRecordDialog = (member: any): void => {
   currentMember.value = member
   recordQuery.page = 1
   showRecordDialog.value = true

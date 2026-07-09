@@ -221,12 +221,12 @@ function handleReset(): void {
   loadData()
 }
 
-function handleDetail(row: Order): void {
+function handleDetail(row: any): void {
   currentOrderId.value = row.id
   detailVisible.value = true
 }
 
-async function handleStatusUpdate(row: Order, status: number): Promise<void> {
+async function handleStatusUpdate(row: any, status: number): Promise<void> {
   try {
     await updateOrderStatus(row.id, status)
     ElMessage.success(`已${statusText(status)}`)

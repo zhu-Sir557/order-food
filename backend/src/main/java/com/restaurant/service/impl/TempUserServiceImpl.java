@@ -30,7 +30,7 @@ public class TempUserServiceImpl implements TempUserService {
         // 用自增 ID 生成 JWT token
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", "CUSTOMER");
-        String token = jwtUtil.generateToken(tempUser.getId().toString(), claims);
+        String token = jwtUtil.generateToken(tempUser.getId().toString(), claims, 720);
 
         // 更新为真实 token
         tempUser.setToken(token);

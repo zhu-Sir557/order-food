@@ -90,7 +90,7 @@ function handleAdd(): void {
   dialogVisible.value = true
 }
 
-function handleEdit(row: Category): void {
+function handleEdit(row: any): void {
   currentCategory.value = { ...row }
   dialogVisible.value = true
 }
@@ -111,7 +111,7 @@ async function handleSave(data: Partial<Category>, id?: number): Promise<void> {
   }
 }
 
-async function handleDelete(row: Category): Promise<void> {
+async function handleDelete(row: any): Promise<void> {
   ElMessageBox.confirm(`确定要删除分类"${row.name}"吗？`, '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',

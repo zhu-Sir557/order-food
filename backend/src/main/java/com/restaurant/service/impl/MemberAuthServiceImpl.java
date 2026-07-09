@@ -111,6 +111,6 @@ public class MemberAuthServiceImpl implements MemberAuthService {
         if (member.getTempUserId() != null) {
             claims.put("tempUserId", member.getTempUserId());
         }
-        return jwtUtil.generateToken(String.valueOf(member.getId()), claims);
+        return jwtUtil.generateToken(String.valueOf(member.getId()), claims, 720);
     }
 }

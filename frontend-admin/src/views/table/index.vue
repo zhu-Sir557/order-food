@@ -82,7 +82,7 @@ function handleAdd(): void {
   dialogVisible.value = true
 }
 
-function handleEdit(row: DiningTable): void {
+function handleEdit(row: any): void {
   currentTable.value = { ...row }
   dialogVisible.value = true
 }
@@ -103,7 +103,7 @@ async function handleSave(data: Partial<DiningTable>, id?: number): Promise<void
   }
 }
 
-async function handleDelete(row: DiningTable): Promise<void> {
+async function handleDelete(row: any): Promise<void> {
   ElMessageBox.confirm(`确定要删除桌台"${row.name}"吗？`, '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',

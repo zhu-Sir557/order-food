@@ -34,7 +34,7 @@ public class AdminAuthServiceImpl implements AdminAuthService {
 
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", "ADMIN");
-        String token = jwtUtil.generateToken(admin.getId().toString(), claims);
+        String token = jwtUtil.generateToken(admin.getId().toString(), claims, 72);
 
         AdminLoginVO vo = new AdminLoginVO();
         vo.setToken(token);

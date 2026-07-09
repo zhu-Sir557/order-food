@@ -37,7 +37,7 @@
           <template #default="{ row }">
             <el-switch
               :model-value="row.status === 1"
-              @change="(val: boolean) => handleStatusChange(row, val)"
+              @change="(val: any) => handleStatusChange(row, val)"
               active-text="启用"
               inactive-text="禁用"
               inline-prompt
@@ -112,7 +112,7 @@ function handleAdd(): void {
   dialogVisible.value = true
 }
 
-function handleEdit(row: Banner): void {
+function handleEdit(row: any): void {
   currentBanner.value = { ...row }
   dialogVisible.value = true
 }
@@ -133,7 +133,7 @@ async function handleSave(data: Partial<Banner>, id?: number): Promise<void> {
   }
 }
 
-async function handleDelete(row: Banner): Promise<void> {
+async function handleDelete(row: any): Promise<void> {
   ElMessageBox.confirm(`确定要删除轮播图"${row.title || '未命名'}"吗？`, '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
@@ -151,7 +151,7 @@ async function handleDelete(row: Banner): Promise<void> {
     .catch(() => {})
 }
 
-async function handleStatusChange(row: Banner, val: boolean): Promise<void> {
+async function handleStatusChange(row: any, val: boolean): Promise<void> {
   const newStatus = val ? 1 : 0
   try {
     await updateBannerStatus(row.id, newStatus)

@@ -195,7 +195,7 @@ const assignForm = reactive({
   memberId: undefined as number | undefined,
 })
 
-const openAssignDialog = (card: Card): void => {
+const openAssignDialog = (card: any): void => {
   currentCard.value = card
   assignForm.memberId = undefined
   showAssignDialog.value = true

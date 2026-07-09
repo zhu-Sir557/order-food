@@ -122,11 +122,11 @@ function handleAdd(): void {
   ElMessage.info('用户管理为P1功能，暂未开放新增')
 }
 
-function handleEdit(_row: UserRecord): void {
+function handleEdit(_row: any): void {
   ElMessage.info('用户管理为P1功能，暂未开放编辑')
 }
 
-function handleDelete(row: UserRecord): void {
+function handleDelete(row: any): void {
   ElMessageBox.confirm(`确定要删除用户"${row.name}"吗？`, '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
