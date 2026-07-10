@@ -1,135 +1,82 @@
-%% ============================================================
-%% 智能点餐系统 — 程序调用流程时序图
-%% 项目: order_food
-%% ============================================================
-
-%% ----------------------------------------------------------
-%% 4.1 顾客下单流程
-%% ----------------------------------------------------------
+%% ============ 主链路一：获取验证码 ============
 sequenceDiagram
-    participant C as 顾客
-    participant H5 as H5前端
-    participant API as 后端API
-    participant OS as OrderService
-    participant DS as DishService
-    participant DB as MySQL
+    autonumber
+    participant FE as H5 前端
+    participant C as SmsController
+    participant S as SmsAuthServiceImpl
+    participant R as SmsRateLimiter
+    participant AL as 阿里云 Dypnsapi
+    participant RD as Redis(SmsCodeStore)
 
-    Note over C,DB: 阶段1: 初始化临时用户
-    C->>H5: 首次打开H5
-    H5->>API: POST /api/h5/user/temp
-    API->>DB: INSERT temp_user (token=UUID)
-    DB-->>API: 返回用户ID
-    API-->>H5: {token, userId}
-    H5->>H5: localStorage保存token
-
-    Note over C,DB: 阶段2: 浏览菜品 & 加购
-    C->>H5: 浏览菜单，点击"+"
-    H5->>H5: Pinia cart store 添加菜品
-    H5->>H5: 实时计算合计金额
-
-    Note over C,DB: 阶段3: 确认 & 提交订单
-    C->>H5: 点击"去结算"
-    H5->>API: GET /api/h5/tables/available
-    API->>DB: SELECT * FROM dining_table WHERE status=0
-    DB-->>API: 桌台列表
-    API-->>H5: 返回可用桌台
-    C->>H5: 选桌号、填备注、确认下单
-    H5->>API: POST /api/h5/orders {items, tableId, remark}
-    API->>OS: submitOrder(OrderSubmitDTO)
-    OS->>DS: 校验菜品状态 & 价格
-    DS->>DB: SELECT * FROM dish WHERE id IN(...)
-    DB-->>DS: 菜品信息
-    DS-->>OS: 校验通过
-    OS->>DB: INSERT order_info (status=0 待支付)
-    OS->>DB: INSERT order_item (批量)
-    OS-->>API: 返回订单详情
-    API-->>H5: 返回订单信息(含orderNo)
-    H5->>H5: 跳转支付页
-
-    Note over C,DB: 阶段4: 模拟支付
-    C->>H5: 点击"模拟支付"
-    H5->>API: POST /api/h5/orders/{id}/pay
-    API->>OS: payOrder(orderId)
-    OS->>OS: 校验当前状态=0(待支付)
-    OS->>DB: UPDATE order_info SET status=1, pay_time=NOW()
-    OS-->>API: 支付成功
-    API-->>H5: 支付成功
-    H5->>H5: 跳转订单详情页
-
-%% ----------------------------------------------------------
-%% 4.2 管理员接单流程
-%% ----------------------------------------------------------
-sequenceDiagram
-    participant A as 管理员
-    participant FE as 后台前端
-    participant API as 后端API
-    participant OS as OrderService
-    participant DB as MySQL
-
-    Note over A,DB: 阶段1: 管理员登录
-    A->>FE: 输入账号密码
-    FE->>API: POST /api/admin/login {username, password}
-    API->>DB: SELECT * FROM admin_user WHERE username=?
-    DB-->>API: 管理员记录
-    API->>API: BCrypt.matches(password, hash)
-    API->>API: JwtUtil.generateToken(adminId, "ADMIN")
-    API-->>FE: {token, adminInfo}
-    FE->>FE: localStorage保存token
-    FE->>FE: 跳转仪表盘
-
-    Note over A,DB: 阶段2: 轮询待接单订单
-    loop 每10秒轮询
-        FE->>API: GET /api/admin/orders/page?status=1
-        API->>OS: pageQuery(status=1)
-        OS->>DB: SELECT * FROM order_info WHERE status=1
-        DB-->>OS: 待接单订单列表
-        OS-->>API: PageResult
-        API-->>FE: 订单列表
-        FE->>A: 显示新订单提醒(声音+弹窗)
+    FE->>C: POST /api/h5/sms/send {phone}
+    C->>S: sendCode(SmsSendRequest)
+    S->>S: 校验手机号格式 1[3-9]\d{9}
+    alt 格式非法
+        S-->>C: BizException("请输入正确的手机号")
+        C-->>FE: 400 友好文案
+    else 格式通过
+        S->>R: canSend(phone, clientIp)
+        R->>RD: GET sms:send:interval:{phone}
+        R->>RD: GET sms:send:limit:phone:{date}
+        R->>RD: GET sms:send:limit:ip:{date}
+        alt 触发限频(间隔/单号/单IP)
+            R-->>S: RateLimitResult(allowed=false, remainSeconds)
+            S-->>C: BizException("发送过于频繁，请 Xs 后再试")
+            C-->>FE: 429 友好文案
+        else 通过
+            S->>AL: SendSmsVerifyCode(phone, signName, templateCode, interval=60, returnVerifyCode=true)
+            AL-->>S: VerifyCode(明文)
+            S->>R: onSendSuccess(phone, clientIp)
+            R->>RD: SET sms:send:interval:{phone}=1 EX 60
+            R->>RD: INCR sms:send:limit:phone:{date} (EX 到当日结束)
+            R->>RD: INCR sms:send:limit:ip:{date}
+            S->>RD: SET sms:code:{phone}=code EX 300
+            S-->>C: void (不返回明文)
+            C-->>FE: 200 成功
+            FE->>FE: 按钮进入 60s 倒计时
+        end
     end
 
-    Note over A,DB: 阶段3: 接单
-    A->>FE: 点击"接单"按钮
-    FE->>API: PATCH /api/admin/orders/{id}/status {status:2}
-    API->>OS: updateStatus(orderId, 2)
-    OS->>DB: SELECT status FROM order_info WHERE id=?
-    DB-->>OS: 当前状态=1(待接单)
-    OS->>OS: 校验 1→2 合法
-    OS->>DB: UPDATE order_info SET status=2, accept_time=NOW()
-    OS-->>API: 更新成功
-    API-->>FE: 操作成功
-    FE->>A: 订单状态变为"制作中"
+%% ============ 主链路二：验证码登录 ============
+sequenceDiagram
+    autonumber
+    participant FE as H5 前端
+    participant C as SmsController
+    participant S as SmsAuthServiceImpl
+    participant RD as Redis(SmsCodeStore)
+    participant DB as MySQL(Member)
 
-    Note over A,DB: 阶段4: 制作完成
-    A->>FE: 点击"完成"按钮
-    FE->>API: PATCH /api/admin/orders/{id}/status {status:3}
-    API->>OS: updateStatus(orderId, 3)
-    OS->>DB: SELECT status FROM order_info WHERE id=?
-    DB-->>OS: 当前状态=2(制作中)
-    OS->>OS: 校验 2→3 合法
-    OS->>DB: UPDATE order_info SET status=3, complete_time=NOW()
-    OS-->>API: 更新成功
-    API-->>FE: 操作成功
-    FE->>A: 订单状态变为"已完成"
-
-    Note over A,DB: 阶段5: 顾客取餐
-    A->>FE: 点击"已取餐"按钮
-    FE->>API: PATCH /api/admin/orders/{id}/status {status:4}
-    API->>OS: updateStatus(orderId, 4)
-    OS->>DB: UPDATE order_info SET status=4
-    OS-->>API: 更新成功
-    API-->>FE: 操作成功
-    FE->>A: 订单状态变为"已取餐"，流程结束
-
-%% ----------------------------------------------------------
-%% 订单状态机流转规则
-%% ----------------------------------------------------------
-%% 合法流转:
-%%   0(待支付) → 1(待接单)    支付成功
-%%   0(待支付) → 5(已取消)    超时取消
-%%   1(待接单) → 2(制作中)    管理员接单
-%%   1(待接单) → 5(已取消)    管理员取消
-%%   2(制作中) → 3(已完成)    制作完成
-%%   3(已完成) → 4(已取餐)    顾客取餐
-%%
-%% 非法流转: 抛出 BizException("非法的订单状态变更")
+    FE->>C: POST /api/h5/sms/login {phone, code}
+    C->>S: login(SmsLoginRequest)
+    S->>RD: GET sms:code:{phone}
+    alt 不存在 / 已过期
+        S-->>C: BizException("验证码已过期，请重新获取")
+        C-->>FE: 400 友好文案
+    else 存在
+        S->>S: 比对 code
+        alt 不一致
+            S->>S: onVerifyFail(phone) → 错误次数 +1
+            alt 达上限(failMax)
+                S->>RD: DEL sms:code:{phone}
+                S->>RD: SET sms:lock:{phone}=1 EX lockMinutes
+                S-->>C: BizException("验证码错误次数过多，请 10 分钟后再试")
+            else 未达上限
+                S-->>C: BizException("验证码错误，还可尝试 N 次")
+            end
+            C-->>FE: 友好文案
+        else 一致
+            S->>RD: DEL sms:code:{phone} (一次性)
+            S->>DB: SELECT * FROM member WHERE phone=? AND deleted=0
+            alt 找到会员
+                DB-->>S: Member
+            else 未找到(自动注册)
+                S->>DB: INSERT member(username=phone, phone, password=NULL, balance=0)
+                DB-->>S: 新 Member
+            end
+            S->>S: JwtUtil.generateToken(memberId, {role=MEMBER}, 720)
+            S->>S: buildLoginVO(member)
+            S-->>C: MemberLoginVO(token, memberId, username, balance)
+            C-->>FE: 200 + VO
+            FE->>FE: memberStore.setMemberInfo() 存 token + 跳转首页
+        end
+    end

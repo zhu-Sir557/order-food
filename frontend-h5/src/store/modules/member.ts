@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { register as registerApi, login as loginApi, getMemberInfo } from '@/api/member'
 import type { RegisterData, LoginData } from '@/api/member'
+import { smsLogin as smsLoginApi } from '@/api/sms'
+import type { SmsLoginData } from '@/api/sms'
 
 interface MemberState {
   memberId: number | null
@@ -38,6 +40,15 @@ export const useMemberStore = defineStore('member', {
      */
     async login(data: LoginData): Promise<void> {
       const res = await loginApi(data)
+      this.setMemberInfo(res.token, res.memberId, res.username, res.balance)
+    },
+
+    /**
+     * 短信验证码登录（自动注册 / 匹配会员）
+     * @param data 短信登录数据（手机号 + 验证码）
+     */
+    async smsLogin(data: SmsLoginData): Promise<void> {
+      const res = await smsLoginApi(data.phone, data.code)
       this.setMemberInfo(res.token, res.memberId, res.username, res.balance)
     },
 

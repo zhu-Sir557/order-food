@@ -106,6 +106,22 @@
             <version>3.17.4</version>
         </dependency>
 
+        <!-- Alibaba Cloud Dypnsapi SDK（号码认证服务，含 SendSmsVerifyCode 自校验通道）
+             tea-openapi / tea-util 由该 SDK 传递引入。
+             注：1.0.6 仅有 VerifySmsCode（官方已停服），不含 SendSmsVerifyCode；
+             故升级至 1.2.3（同 1.x 线，最小变更）以满足「ReturnVerifyCode 取回明文」需求。 -->
+        <dependency>
+            <groupId>com.aliyun</groupId>
+            <artifactId>dypnsapi20170525</artifactId>
+            <version>1.2.3</version>
+        </dependency>
+
+        <!-- Spring Boot Data Redis (手机验证码登录自校验存储) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
         <!-- Spring Boot Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

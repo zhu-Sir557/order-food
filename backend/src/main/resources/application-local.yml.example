@@ -18,3 +18,7 @@ aliyun:
   oss:
     access-key-id: <your-oss-access-key-id>
     access-key-secret: <your-oss-access-key-secret>
+  # 短信验证码登录（Dypnsapi）：AK/SK 复用 OSS 同款 RAM 凭证
+  dypnsapi:
+    access-key-id: <your-dypnsapi-access-key-id>
+    access-key-secret: <your-dypnsapi-access-key-secret>

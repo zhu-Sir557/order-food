@@ -14,6 +14,12 @@ spring:
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: Asia/Shanghai
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+      timeout: 5000ms
 
 mybatis-plus:
   mapper-locations: classpath:mapper/*.xml
@@ -39,3 +45,17 @@ logging:
   level:
     com.restaurant: debug
     com.baomidou: debug
+
+sms:
+  rate-limit:
+    code-ttl-seconds: 300
+    interval-seconds: 60
+    phone-daily-limit: 10
+    ip-daily-limit: 50
+    fail-max: 5
+    lock-minutes: 10
+aliyun:
+  dypnsapi:
+    endpoint: dypnsapi.aliyuncs.com
+    sign-name: "恒创联众"
+    template-code: "100001"

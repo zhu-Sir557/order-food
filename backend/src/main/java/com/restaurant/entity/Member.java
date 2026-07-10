@@ -33,6 +33,9 @@ public class Member {
     /** 关联的临时用户ID */
     private Long tempUserId;
 
+    /** 手机号（短信验证码登录） */
+    private String phone;
+
     /** 创建时间 */
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
