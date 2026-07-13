@@ -116,7 +116,7 @@ const endDrag = async (): Promise<void> => {
 
   // 校验
   try {
-    const result = await checkSlider(captchaData.captchaId, sliderLeft.value)
+    const result = await checkSlider(captchaData.captchaId, puzzleLeft.value)
     if (result.success && result.captchaToken) {
       verified.value = true
       emit('success', result.captchaToken)

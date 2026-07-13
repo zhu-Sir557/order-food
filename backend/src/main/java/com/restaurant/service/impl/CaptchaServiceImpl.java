@@ -18,15 +18,15 @@ import org.springframework.stereotype.Service;
  * 验证码服务实现
  *
  * <p>使用 ConcurrentHashMap 存储验证码状态，5分钟过期，定时清理。
- * 滑块校验容差 ±5px。</p>
+ * 滑块校验容差 ±10px。</p>
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class CaptchaServiceImpl implements CaptchaService {
 
-    /** 容差范围（±5px） */
-    private static final int TOLERANCE = 5;
+    /** 容差范围（±10px） */
+    private static final int TOLERANCE = 10;
 
     /** 验证码有效期（分钟） */
     private static final int EXPIRE_MINUTES = 5;
@@ -95,7 +95,7 @@ public class CaptchaServiceImpl implements CaptchaService {
             return CaptchaCheckVO.fail();
         }
 
-        // 校验偏移量（容差 ±5px）
+        // 校验偏移量（容差 ±10px）
         if (Math.abs(xOffset - info.correctX) <= TOLERANCE) {
             info.verified = true;
             // captchaToken 即为 captchaId，登录时用于验证
