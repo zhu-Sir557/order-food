@@ -75,12 +75,6 @@ const routes = [
     meta: { title: '设置密码' },
   },
   {
-    path: '/avatar',
-    name: 'Avatar',
-    component: () => import('@/views/avatar/index.vue'),
-    meta: { title: '更换头像' },
-  },
-  {
     path: '/balance',
     name: 'Balance',
     component: () => import('@/views/balance/index.vue'),

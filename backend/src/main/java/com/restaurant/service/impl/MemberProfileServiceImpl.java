@@ -8,13 +8,13 @@ import com.restaurant.config.ProfileProperties;
 import com.restaurant.dto.BindPhoneDTO;
 import com.restaurant.dto.SendLoginCodeDTO;
 import com.restaurant.dto.SetPasswordDTO;
-import com.restaurant.dto.UpdateAvatarDTO;
 import com.restaurant.dto.UpdateNicknameDTO;
 import com.restaurant.entity.Avatar;
 import com.restaurant.entity.Member;
 import com.restaurant.mapper.AvatarMapper;
 import com.restaurant.mapper.MemberMapper;
 import com.restaurant.service.CaptchaService;
+import com.restaurant.service.FileService;
 import com.restaurant.service.MemberProfileService;
 import com.restaurant.service.SmsAuthService;
 import com.restaurant.service.SmsCodeStore;
@@ -35,6 +35,8 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+import com.restaurant.vo.AvatarUpdateVO;
 
 /**
  * 会员资料业务服务实现（F1 绑定手机/设密码、F3 昵称/头像）
@@ -59,6 +61,7 @@ public class MemberProfileServiceImpl implements MemberProfileService {
     private final BCryptPasswordEncoder passwordEncoder;
     private final ProfileProperties profileProperties;
     private final PasswordProperties passwordProperties;
+    private final FileService fileService;
     @Lazy
     private final SmsAuthService smsAuthService;
 
@@ -66,7 +69,7 @@ public class MemberProfileServiceImpl implements MemberProfileService {
             SmsCodeStore smsCodeStore, SmsRateLimiter rateLimiter, CaptchaService captchaService,
             StringRedisTemplate redisTemplate, BCryptPasswordEncoder passwordEncoder,
             ProfileProperties profileProperties, PasswordProperties passwordProperties,
-            @Lazy SmsAuthService smsAuthService) {
+            FileService fileService, @Lazy SmsAuthService smsAuthService) {
         this.memberMapper = memberMapper;
         this.avatarMapper = avatarMapper;
         this.smsCodeStore = smsCodeStore;
@@ -76,6 +79,7 @@ public class MemberProfileServiceImpl implements MemberProfileService {
         this.passwordEncoder = passwordEncoder;
         this.profileProperties = profileProperties;
         this.passwordProperties = passwordProperties;
+        this.fileService = fileService;
         this.smsAuthService = smsAuthService;
     }
 
@@ -169,10 +173,13 @@ public class MemberProfileServiceImpl implements MemberProfileService {
     }
 
     @Override
-    public ChangeLimitVO updateAvatar(Long memberId, UpdateAvatarDTO dto) {
-        Avatar avatar = avatarMapper.selectById(dto.getAvatarId());
-        if (avatar == null || (avatar.getDeleted() != null && avatar.getDeleted() == 1)) {
-            throw new BizException(ResultCode.AVATAR_NOT_FOUND, "头像不存在");
+    public AvatarUpdateVO updateAvatar(Long memberId, MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BizException(ResultCode.PARAM_ERROR, "请选择要上传的头像图片");
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new BizException(ResultCode.PARAM_ERROR, "仅支持上传图片文件");
         }
         int limit = profileProperties.getAvatarDailyLimit();
         long count = incrementDailyCount(KEY_AVATAR_COUNT + memberId);
@@ -183,10 +190,12 @@ public class MemberProfileServiceImpl implements MemberProfileService {
         if (member == null) {
             throw new BizException(ResultCode.ACCOUNT_NOT_FOUND, "账号不存在");
         }
-        member.setAvatar(avatar.getOssUrl());
+        String ossUrl = fileService.upload(file);
+        member.setAvatar(ossUrl);
         memberMapper.updateById(member);
-        log.info("会员修改头像成功: memberId={}, avatarId={}", memberId, dto.getAvatarId());
-        ChangeLimitVO avatarResult = new ChangeLimitVO();
+        log.info("会员上传头像成功: memberId={}", memberId);
+        AvatarUpdateVO avatarResult = new AvatarUpdateVO();
+        avatarResult.setAvatar(ossUrl);
         avatarResult.setRemaining((int) (limit - count));
         return avatarResult;
     }

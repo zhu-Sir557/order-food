@@ -4,12 +4,11 @@ import type {
   BalanceRecord,
   MyCard,
   PageResult,
-  AvatarVO,
   UnifiedLoginData,
   BindPhoneData,
   SetPasswordData,
   UpdateNicknameData,
-  UpdateAvatarData,
+  AvatarUpdateResult,
   ChangeLimitVO,
 } from '@/types'
 
@@ -19,7 +18,7 @@ export type {
   BindPhoneData,
   SetPasswordData,
   UpdateNicknameData,
-  UpdateAvatarData,
+  AvatarUpdateResult,
 } from '@/types'
 
 /** 会员登录/注册响应（含昵称/头像） */
@@ -57,7 +56,7 @@ export function register(data: RegisterData): Promise<MemberLoginVO> {
 }
 
 /**
- * 统一会员登录（ACCOUNT_PASSWORD / PHONE_CODE / PHONE_PASSWORD / ACCOUNT_CODE）
+ * 统一会员登录（ACCOUNT_PASSWORD / PHONE_CODE）
  * @param data 统一登录数据
  * @returns 登录响应（含 token 与昵称/头像）
  */
@@ -91,20 +90,14 @@ export function updateNickname(data: UpdateNicknameData): Promise<ChangeLimitVO>
 }
 
 /**
- * 修改头像
- * @param data 修改头像数据
- * @returns 修改后剩余次数
+ * 上传头像（multipart/form-data，字段名 file）
+ * @param formData 包含 file 的表单数据
+ * @returns 新头像地址与剩余可修改次数
  */
-export function updateAvatar(data: UpdateAvatarData): Promise<ChangeLimitVO> {
-  return request.post('/api/h5/member/avatar', data)
-}
-
-/**
- * 账号名 + 验证码登录的发码
- * @param data 账号名 + 滑块 token
- */
-export function sendLoginCode(data: { account: string; captchaToken: string }): Promise<void> {
-  return request.post('/api/h5/member/send-login-code', data)
+export function uploadAvatar(formData: FormData): Promise<AvatarUpdateResult> {
+  return request.post('/api/h5/member/avatar', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
 }
 
 /**

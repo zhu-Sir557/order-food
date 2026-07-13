@@ -4,20 +4,23 @@ import com.restaurant.common.Result;
 import com.restaurant.dto.BindPhoneDTO;
 import com.restaurant.dto.SendLoginCodeDTO;
 import com.restaurant.dto.SetPasswordDTO;
-import com.restaurant.dto.UpdateAvatarDTO;
 import com.restaurant.dto.UpdateNicknameDTO;
 import com.restaurant.service.MemberProfileService;
 import com.restaurant.vo.AvatarVO;
+import com.restaurant.vo.AvatarUpdateVO;
 import com.restaurant.vo.ChangeLimitVO;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * H5 会员资料接口（F1 绑定手机/设密码、F3 昵称/头像）
@@ -57,12 +60,12 @@ public class MemberProfileController {
     }
 
     /**
-     * 修改头像（每日次数受限）
+     * 上传头像（multipart/form-data，字段名 file；每日次数受限）
      */
-    @PostMapping("/avatar")
-    public Result<ChangeLimitVO> updateAvatar(@Valid @RequestBody UpdateAvatarDTO dto,
-                                              HttpServletRequest request) {
-        return Result.success(memberProfileService.updateAvatar((Long) request.getAttribute("memberId"), dto));
+    @PostMapping(value = "/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Result<AvatarUpdateVO> updateAvatar(@RequestParam("file") MultipartFile file,
+                                               HttpServletRequest request) {
+        return Result.success(memberProfileService.updateAvatar((Long) request.getAttribute("memberId"), file));
     }
 
     /**

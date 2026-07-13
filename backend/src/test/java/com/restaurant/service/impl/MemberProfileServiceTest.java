@@ -8,16 +8,18 @@ import com.restaurant.dto.BindPhoneDTO;
 import com.restaurant.dto.SendLoginCodeDTO;
 import com.restaurant.dto.SetPasswordDTO;
 import com.restaurant.dto.SmsSendRequest;
-import com.restaurant.dto.UpdateAvatarDTO;
 import com.restaurant.dto.UpdateNicknameDTO;
-import com.restaurant.entity.Avatar;
 import com.restaurant.entity.Member;
 import com.restaurant.mapper.AvatarMapper;
 import com.restaurant.mapper.MemberMapper;
 import com.restaurant.service.CaptchaService;
+import com.restaurant.service.FileService;
 import com.restaurant.service.SmsAuthService;
 import com.restaurant.service.SmsCodeStore;
+import com.restaurant.vo.AvatarUpdateVO;
 import com.restaurant.vo.ChangeLimitVO;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -58,6 +60,7 @@ class MemberProfileServiceTest {
     @Mock ValueOperations<String, String> ops;
     @Mock BCryptPasswordEncoder passwordEncoder;
     @Mock SmsAuthService smsAuthService;
+    @Mock FileService fileService;
 
     final ProfileProperties profileProperties = new ProfileProperties();
     final PasswordProperties passwordProperties = new PasswordProperties();
@@ -74,7 +77,7 @@ class MemberProfileServiceTest {
         lenient().when(redisTemplate.opsForValue()).thenReturn(ops);
         service = new MemberProfileServiceImpl(memberMapper, avatarMapper, smsCodeStore,
                 rateLimiter, captchaService, redisTemplate, passwordEncoder,
-                profileProperties, passwordProperties, smsAuthService);
+                profileProperties, passwordProperties, fileService, smsAuthService);
     }
 
     /* ===================== 绑手机 bindPhone (F1) ===================== */
@@ -306,63 +309,49 @@ class MemberProfileServiceTest {
         assertEquals(0, vo.getRemaining());
     }
 
-    /* ===================== 头像 updateAvatar (F3) ===================== */
+    /* ===================== 头像 uploadAvatar (F3) ===================== */
 
     @Test
-    @DisplayName("updateAvatar: 头像不存在 → AVATAR_NOT_FOUND")
-    void updateAvatar_notFound() {
-        when(avatarMapper.selectById(10L)).thenReturn(null);
-        UpdateAvatarDTO dto = new UpdateAvatarDTO();
-        dto.setAvatarId(10L);
-        BizException ex = assertThrows(BizException.class, () -> service.updateAvatar(MEMBER_ID, dto));
-        assertEquals(ResultCode.AVATAR_NOT_FOUND.getCode(), ex.getCode());
+    @DisplayName("uploadAvatar: 空文件 → PARAM_ERROR")
+    void uploadAvatar_empty() {
+        MultipartFile file = new MockMultipartFile("file", "", "image/png", new byte[0]);
+        BizException ex = assertThrows(BizException.class, () -> service.updateAvatar(MEMBER_ID, file));
+        assertEquals(ResultCode.PARAM_ERROR.getCode(), ex.getCode());
+        verify(fileService, never()).upload(any());
     }
 
     @Test
-    @DisplayName("updateAvatar: 头像已删除 → AVATAR_NOT_FOUND")
-    void updateAvatar_deleted() {
-        Avatar avatar = new Avatar();
-        avatar.setDeleted(1);
-        when(avatarMapper.selectById(10L)).thenReturn(avatar);
-        UpdateAvatarDTO dto = new UpdateAvatarDTO();
-        dto.setAvatarId(10L);
-        BizException ex = assertThrows(BizException.class, () -> service.updateAvatar(MEMBER_ID, dto));
-        assertEquals(ResultCode.AVATAR_NOT_FOUND.getCode(), ex.getCode());
+    @DisplayName("uploadAvatar: 非图片文件 → PARAM_ERROR")
+    void uploadAvatar_notImage() {
+        MultipartFile file = new MockMultipartFile("file", "x.txt", "text/plain", "hello".getBytes());
+        BizException ex = assertThrows(BizException.class, () -> service.updateAvatar(MEMBER_ID, file));
+        assertEquals(ResultCode.PARAM_ERROR.getCode(), ex.getCode());
+        verify(fileService, never()).upload(any());
     }
 
     @Test
-    @DisplayName("updateAvatar: 当日次数达上限(count=6>limit5) → AVATAR_CHANGE_LIMIT 且不写库")
-    void updateAvatar_limitExceeded() {
-        Avatar avatar = new Avatar();
-        avatar.setId(10L);
-        avatar.setOssUrl("http://oss/a.svg");
-        avatar.setDeleted(0);
-        when(avatarMapper.selectById(10L)).thenReturn(avatar);
+    @DisplayName("uploadAvatar: 当日次数达上限(count=6>limit5) → AVATAR_CHANGE_LIMIT 且不写库")
+    void uploadAvatar_limitExceeded() {
         when(ops.increment(anyString())).thenReturn(6L);
-        UpdateAvatarDTO dto = new UpdateAvatarDTO();
-        dto.setAvatarId(10L);
-
-        BizException ex = assertThrows(BizException.class, () -> service.updateAvatar(MEMBER_ID, dto));
+        MultipartFile file = new MockMultipartFile("file", "a.png", "image/png", "img".getBytes());
+        BizException ex = assertThrows(BizException.class, () -> service.updateAvatar(MEMBER_ID, file));
         assertEquals(ResultCode.AVATAR_CHANGE_LIMIT.getCode(), ex.getCode());
+        verify(fileService, never()).upload(any());
         verify(memberMapper, never()).selectById(any());
     }
 
     @Test
-    @DisplayName("updateAvatar: 成功 → 写回头像 ossUrl，剩余=limit-count=4")
-    void updateAvatar_success() {
-        Avatar avatar = new Avatar();
-        avatar.setId(10L);
-        avatar.setOssUrl("http://oss/a.svg");
-        avatar.setDeleted(0);
-        when(avatarMapper.selectById(10L)).thenReturn(avatar);
+    @DisplayName("uploadAvatar: 成功 → 上传并写回头像URL，剩余=limit-count=4")
+    void uploadAvatar_success() {
         when(ops.increment(anyString())).thenReturn(1L);
+        when(fileService.upload(any())).thenReturn("http://oss/new.svg");
         Member member = newMember(null);
         when(memberMapper.selectById(MEMBER_ID)).thenReturn(member);
-        UpdateAvatarDTO dto = new UpdateAvatarDTO();
-        dto.setAvatarId(10L);
+        MultipartFile file = new MockMultipartFile("file", "a.png", "image/png", "img".getBytes());
 
-        ChangeLimitVO vo = service.updateAvatar(MEMBER_ID, dto);
-        assertEquals("http://oss/a.svg", member.getAvatar());
+        AvatarUpdateVO vo = service.updateAvatar(MEMBER_ID, file);
+        assertEquals("http://oss/new.svg", member.getAvatar());
+        verify(fileService).upload(any());
         verify(memberMapper).updateById(member);
         assertEquals((Integer) (profileProperties.getAvatarDailyLimit() - 1), vo.getRemaining());
     }

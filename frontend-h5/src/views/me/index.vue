@@ -4,12 +4,26 @@
 
     <!-- 用户信息卡片 -->
     <div class="user-card">
-      <div class="avatar">
+      <div class="avatar" @click="triggerAvatarUpload">
         <img v-if="memberStore.avatar" :src="memberStore.avatar" class="avatar-img" alt="头像" />
         <van-icon v-else name="user-circle-o" size="60" color="#fff" />
+        <div class="avatar-edit" v-if="!uploading">
+          <van-icon name="edit" size="14" color="#fff" />
+        </div>
+        <van-loading v-else class="avatar-edit" type="spinner" size="14" color="#fff" />
+        <input
+          ref="fileInput"
+          type="file"
+          accept="image/*"
+          class="hidden-file-input"
+          @change="onAvatarChange"
+        />
       </div>
       <div class="user-info" v-if="memberStore.isLoggedIn">
-        <div class="user-name">{{ memberStore.displayName }}</div>
+        <div class="user-name-row">
+          <span class="user-name">{{ memberStore.displayName }}</span>
+          <van-icon name="edit" class="edit-icon" @click="showNickPopup = true" />
+        </div>
         <div class="user-desc">余额: ¥{{ memberStore.balance.toFixed(2) }}</div>
       </div>
       <div class="user-info" v-else>
@@ -20,14 +34,6 @@
 
     <!-- 会员资料菜单（登录后可见） -->
     <van-cell-group inset class="menu-group" v-if="memberStore.isLoggedIn">
-      <van-cell title="更换头像" icon="smile-o" is-link @click="router.push('/avatar')" />
-      <van-cell
-        title="修改昵称"
-        icon="edit"
-        is-link
-        :value="memberStore.nickname || ''"
-        @click="showNickPopup = true"
-      />
       <van-cell title="绑定手机" icon="phone-o" is-link @click="router.push('/bind-phone')" />
       <van-cell title="设置密码" icon="lock" is-link @click="router.push('/set-password')" />
     </van-cell-group>
@@ -82,6 +88,33 @@ const memberStore = useMemberStore()
 /** 昵称编辑弹窗显隐 */
 const showNickPopup = ref(false)
 
+/** 头像上传 */
+const fileInput = ref<HTMLInputElement | null>(null)
+const uploading = ref(false)
+
+/** 触发隐藏文件选择 */
+const triggerAvatarUpload = (): void => {
+  fileInput.value?.click()
+}
+
+/** 选择图片后上传头像 */
+const onAvatarChange = async (e: Event): Promise<void> => {
+  const target = e.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+  uploading.value = true
+  try {
+    const remaining = await memberStore.uploadAvatar(file)
+    showToast(`头像已更新，今日还可修改 ${remaining} 次`)
+  } catch (error) {
+    console.error('上传头像失败:', error)
+  } finally {
+    uploading.value = false
+    // 复位，保证下次选择同一文件也能触发 change
+    target.value = ''
+  }
+}
+
 /** 退出登录 */
 const handleLogout = async (): Promise<void> => {
   memberStore.clearMemberInfo()
@@ -114,6 +147,7 @@ onMounted(() => {
 }
 
 .avatar {
+  position: relative;
   flex-shrink: 0;
   width: 64px;
   height: 64px;
@@ -124,6 +158,7 @@ onMounted(() => {
   justify-content: center;
   border: 2px solid rgba(255, 255, 255, 0.3);
   overflow: hidden;
+  cursor: pointer;
 }
 
 .avatar-img {
@@ -132,14 +167,43 @@ onMounted(() => {
   object-fit: cover;
 }
 
+.avatar-edit {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hidden-file-input {
+  display: none;
+}
+
 .user-info {
   margin-left: 16px;
+}
+
+.user-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .user-name {
   font-size: var(--font-size-h1);
   font-weight: var(--font-weight-bold);
   color: #fff;
+}
+
+.edit-icon {
+  font-size: 16px;
+  color: #fff;
+  opacity: 0.9;
 }
 
 .user-desc {

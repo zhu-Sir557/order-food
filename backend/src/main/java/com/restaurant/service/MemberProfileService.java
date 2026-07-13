@@ -3,11 +3,12 @@ package com.restaurant.service;
 import com.restaurant.dto.BindPhoneDTO;
 import com.restaurant.dto.SendLoginCodeDTO;
 import com.restaurant.dto.SetPasswordDTO;
-import com.restaurant.dto.UpdateAvatarDTO;
 import com.restaurant.dto.UpdateNicknameDTO;
 import com.restaurant.vo.AvatarVO;
+import com.restaurant.vo.AvatarUpdateVO;
 import com.restaurant.vo.ChangeLimitVO;
 import java.util.List;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 会员资料业务服务接口（F1 绑定手机/设密码、F3 昵称/头像）
@@ -46,7 +47,7 @@ public interface MemberProfileService {
      * @param dto      修改请求
      * @return 修改后剩余次数
      */
-    ChangeLimitVO updateAvatar(Long memberId, UpdateAvatarDTO dto);
+    AvatarUpdateVO updateAvatar(Long memberId, MultipartFile file);
 
     /**
      * 账号名 + 验证码登录的发码（按 username 定位绑定手机号后发送）

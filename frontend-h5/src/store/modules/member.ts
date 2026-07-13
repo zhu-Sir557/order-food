@@ -6,14 +6,11 @@ import {
   bindPhone as bindPhoneApi,
   setPassword as setPasswordApi,
   updateNickname as updateNicknameApi,
-  updateAvatar as updateAvatarApi,
-  sendLoginCode as sendLoginCodeApi,
+  uploadAvatar as uploadAvatarApi,
 } from '@/api/member'
-import type { RegisterData, UnifiedLoginData, BindPhoneData, SetPasswordData, UpdateNicknameData, UpdateAvatarData } from '@/api/member'
+import type { RegisterData, UnifiedLoginData, BindPhoneData, SetPasswordData, UpdateNicknameData, AvatarUpdateResult } from '@/api/member'
 import { smsLogin as smsLoginApi } from '@/api/sms'
 import type { SmsLoginData } from '@/api/sms'
-import { getAvatars as getAvatarsApi } from '@/api/avatar'
-import type { AvatarVO } from '@/types'
 
 interface MemberState {
   memberId: number | null
@@ -104,31 +101,18 @@ export const useMemberStore = defineStore('member', {
     },
 
     /**
-     * 修改头像
-     * @param data 修改头像数据
-     * @param ossUrl 头像 OSS 地址
-     * @returns 修改后剩余次数
+     * 上传头像（调用后端 multipart 接口，返回新头像地址与剩余次数）
+     * @param file 用户选择的图片文件
+     * @returns 当日剩余可修改次数
      */
-    async updateAvatar(data: UpdateAvatarData, ossUrl: string): Promise<number> {
-      const res = await updateAvatarApi(data)
-      this.avatar = ossUrl
+    async uploadAvatar(file: File): Promise<number> {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res: AvatarUpdateResult = await uploadAvatarApi(formData)
+      this.avatar = res.avatar
       this.avatarRemaining = res.remaining
-      localStorage.setItem('memberAvatar', ossUrl)
+      localStorage.setItem('memberAvatar', res.avatar)
       return res.remaining
-    },
-
-    /**
-     * 账号名 + 验证码登录的发码
-     */
-    async sendLoginCode(data: { account: string; captchaToken: string }): Promise<void> {
-      await sendLoginCodeApi(data)
-    },
-
-    /**
-     * 获取头像列表
-     */
-    async getAvatars(): Promise<AvatarVO[]> {
-      return getAvatarsApi()
     },
 
     /**

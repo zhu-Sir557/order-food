@@ -67,13 +67,7 @@ export interface MemberInfo {
   avatar?: string
 }
 
-/** 头像选项 */
-export interface AvatarVO {
-  id: number
-  ossUrl: string
-}
-
-/** 统一登录请求（四种组合） */
+/** 统一登录请求（两种组合） */
 export type LoginType = 'ACCOUNT_PASSWORD' | 'PHONE_CODE' | 'PHONE_PASSWORD' | 'ACCOUNT_CODE'
 
 export interface UnifiedLoginData {
@@ -102,9 +96,12 @@ export interface UpdateNicknameData {
   nickname: string
 }
 
-/** 修改头像请求 */
-export interface UpdateAvatarData {
-  avatarId: number
+/** 上传头像响应 */
+export interface AvatarUpdateResult {
+  /** 新头像地址 */
+  avatar: string
+  /** 当日剩余可修改次数 */
+  remaining: number
 }
 
 /** 修改次数回执 */

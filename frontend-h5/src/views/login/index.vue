@@ -114,114 +114,10 @@
             <div class="tip-text">未注册的手机号将自动创建账号</div>
           </van-form>
         </van-tab>
-
-        <!-- ③ 手机号 + 密码 -->
-        <van-tab title="手机密码">
-          <van-form @submit="onPhonePasswordSubmit" class="login-form">
-            <van-cell-group inset>
-              <van-field
-                v-model="phonePwdForm.phone"
-                type="tel"
-                name="phone"
-                label="手机号"
-                placeholder="请输入手机号"
-                maxlength="11"
-                :rules="[
-                  { required: true, message: '请输入手机号' },
-                  { pattern: PHONE_REGEX, message: '请输入正确的手机号' }
-                ]"
-              />
-              <van-field
-                v-model="phonePwdForm.password"
-                type="password"
-                name="password"
-                label="密码"
-                placeholder="请输入密码"
-                :rules="[{ required: true, message: '请输入密码' }]"
-              />
-            </van-cell-group>
-
-            <div class="login-btn">
-              <van-button
-                type="primary"
-                block
-                round
-                size="large"
-                :loading="loading"
-                loading-text="登录中..."
-                native-type="submit"
-              >
-                登录
-              </van-button>
-            </div>
-
-            <div class="register-link">
-              还没有密码？
-              <span @click="router.push('/set-password')">去设置</span>
-            </div>
-          </van-form>
-        </van-tab>
-
-        <!-- ④ 账号 + 验证码 -->
-        <van-tab title="账号验证码">
-          <van-form @submit="onAccountCodeSubmit" class="login-form">
-            <van-cell-group inset>
-              <van-field
-                v-model="accountCodeForm.account"
-                name="account"
-                label="账号"
-                placeholder="请输入账号"
-                :rules="[{ required: true, message: '请输入账号' }]"
-              />
-              <van-field
-                v-model="accountCodeForm.code"
-                type="tel"
-                name="code"
-                label="验证码"
-                placeholder="请输入6位验证码"
-                maxlength="6"
-                :rules="[{ required: true, message: '请输入验证码' }]"
-              >
-                <template #button>
-                  <van-button
-                    size="small"
-                    type="primary"
-                    :disabled="countdown2 > 0"
-                    @click="onSendAccountCode"
-                  >
-                    <van-count-down
-                      v-if="countdown2 > 0"
-                      :time="countdown2"
-                      format="ss"
-                      @finish="onCountdownFinish2"
-                    />
-                    <span v-else>获取验证码</span>
-                  </van-button>
-                </template>
-              </van-field>
-            </van-cell-group>
-
-            <div class="login-btn">
-              <van-button
-                type="primary"
-                block
-                round
-                size="large"
-                :loading="loading"
-                loading-text="登录中..."
-                native-type="submit"
-              >
-                登录
-              </van-button>
-            </div>
-
-            <div class="tip-text">验证码将发送至该账号已绑定的手机号</div>
-          </van-form>
-        </van-tab>
       </van-tabs>
     </div>
 
-    <!-- 滑块验证弹窗（四种登录 / 发码共用） -->
+    <!-- 滑块验证弹窗（两种登录 / 发码共用） -->
     <van-popup
       v-model:show="showCaptcha"
       round
@@ -253,21 +149,18 @@ const memberStore = useMemberStore()
 /** 手机号正则（与后端 ^1[3-9]\d{9}$ 一致） */
 const PHONE_REGEX = /^1[3-9]\d{9}$/
 
-/** 当前激活的 Tab：0=账号密码 1=手机验证码 2=手机密码 3=账号验证码 */
+/** 当前激活的 Tab：0=账号密码 1=手机验证码 */
 const activeTab = ref(0)
-/** 统一登录按钮 loading（四种方式共用） */
+/** 统一登录按钮 loading（两种方式共用） */
 const loading = ref(false)
 const showCaptcha = ref(false)
 const captchaToken = ref('')
 
 const accountPwdForm = reactive({ account: '', password: '' })
 const phoneCodeForm = reactive({ phone: '', code: '' })
-const phonePwdForm = reactive({ phone: '', password: '' })
-const accountCodeForm = reactive({ account: '', code: '' })
 
 /** 获取验证码倒计时（毫秒）；>0 时按钮禁用并显示剩余秒 */
 const countdown = ref(0)
-const countdown2 = ref(0)
 
 /** 滑块验证通过后待执行的操作（携带一次性 captchaToken） */
 let afterCaptcha: ((token: string) => void) | null = null
@@ -294,7 +187,7 @@ const onCaptchaFail = (): void => {
   afterCaptcha = null
 }
 
-/** 统一登录调用（四种方式共用） */
+/** 统一登录调用（两种方式共用） */
 const doLogin = async (data: UnifiedLoginData): Promise<void> => {
   loading.value = true
   try {
@@ -316,22 +209,6 @@ const onAccountPasswordSubmit = (): void => {
       loginType: 'ACCOUNT_PASSWORD',
       account: accountPwdForm.account,
       password: accountPwdForm.password,
-      captchaToken: token,
-    })
-  )
-}
-
-/** ③ 手机密码登录：弹滑块 → 统一登录 */
-const onPhonePasswordSubmit = (): void => {
-  if (!PHONE_REGEX.test(phonePwdForm.phone)) {
-    showToast('请输入正确的手机号')
-    return
-  }
-  openCaptcha((token) =>
-    doLogin({
-      loginType: 'PHONE_PASSWORD',
-      account: phonePwdForm.phone,
-      password: phonePwdForm.password,
       captchaToken: token,
     })
   )
@@ -375,50 +252,8 @@ const onPhoneCodeSubmit = (): void => {
   )
 }
 
-/** ④ 账号验证码：先发码（滑块校验，发送至已绑定手机） */
-const onSendAccountCode = (): void => {
-  if (!accountCodeForm.account) {
-    showToast('请输入账号')
-    return
-  }
-  openCaptcha(async (token) => {
-    try {
-      await memberStore.sendLoginCode({ account: accountCodeForm.account, captchaToken: token })
-      showToast('验证码已发送')
-      countdown2.value = 60 * 1000
-    } catch (error) {
-      console.error('发送验证码失败:', error)
-      captchaToken.value = ''
-    }
-  })
-}
-
-/** ④ 账号验证码：提交登录（再次滑块校验，统一登录携带 code） */
-const onAccountCodeSubmit = (): void => {
-  if (!accountCodeForm.account) {
-    showToast('请输入账号')
-    return
-  }
-  if (!accountCodeForm.code) {
-    showToast('请输入验证码')
-    return
-  }
-  openCaptcha((token) =>
-    doLogin({
-      loginType: 'ACCOUNT_CODE',
-      account: accountCodeForm.account,
-      code: accountCodeForm.code,
-      captchaToken: token,
-    })
-  )
-}
-
 const onCountdownFinish = (): void => {
   countdown.value = 0
-}
-
-const onCountdownFinish2 = (): void => {
-  countdown2.value = 0
 }
 </script>
 
