@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { compressImage } from '@/utils/image'
 import {
   register as registerApi,
   login as loginApi,
@@ -106,8 +107,9 @@ export const useMemberStore = defineStore('member', {
      * @returns 当日剩余可修改次数
      */
     async uploadAvatar(file: File): Promise<number> {
+      const blob = await compressImage(file).catch(() => file)
       const formData = new FormData()
-      formData.append('file', file)
+      formData.append('file', blob, file.name.replace(/\.\w+$/, '.jpg'))
       const res: AvatarUpdateResult = await uploadAvatarApi(formData)
       this.avatar = res.avatar
       this.avatarRemaining = res.remaining

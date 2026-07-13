@@ -97,6 +97,7 @@ export function updateNickname(data: UpdateNicknameData): Promise<ChangeLimitVO>
 export function uploadAvatar(formData: FormData): Promise<AvatarUpdateResult> {
   return request.post('/api/h5/member/avatar', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000,
   })
 }
 
