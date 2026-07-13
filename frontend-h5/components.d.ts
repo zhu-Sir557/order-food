@@ -9,6 +9,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     CartBar: typeof import('./src/components/CartBar.vue')['default']
     DishCard: typeof import('./src/components/DishCard.vue')['default']
+    EditNicknamePopup: typeof import('./src/components/EditNicknamePopup.vue')['default']
     OrderCard: typeof import('./src/components/OrderCard.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
@@ -28,11 +29,20 @@ declare module 'vue' {
     VanLoading: typeof import('vant/es')['Loading']
     VanNavBar: typeof import('vant/es')['NavBar']
     VanPopup: typeof import('vant/es')['Popup']
+    VanPullRefresh: typeof import('vant/es')['PullRefresh']
+    VanRadio: typeof import('vant/es')['Radio']
+    VanRadioGroup: typeof import('vant/es')['RadioGroup']
+    VanSearch: typeof import('vant/es')['Search']
+    VanStep: typeof import('vant/es')['Step']
+    VanStepper: typeof import('vant/es')['Stepper']
+    VanSteps: typeof import('vant/es')['Steps']
     VanSwipe: typeof import('vant/es')['Swipe']
+    VanSwipeCell: typeof import('vant/es')['SwipeCell']
     VanSwipeItem: typeof import('vant/es')['SwipeItem']
     VanTab: typeof import('vant/es')['Tab']
     VanTabbar: typeof import('vant/es')['Tabbar']
     VanTabbarItem: typeof import('vant/es')['TabbarItem']
     VanTabs: typeof import('vant/es')['Tabs']
+    VanTag: typeof import('vant/es')['Tag']
   }
 }

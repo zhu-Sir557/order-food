@@ -25,7 +25,6 @@ public class H5MemberAuthController {
 
     /**
      * 会员注册（自动登录返回 JWT）
-     * tempUserId 可选：有则关联购物车，无则直接注册
      *
      * @param dto     注册请求
      * @param request HTTP 请求（可能含 tempUserId 属性）
@@ -39,13 +38,15 @@ public class H5MemberAuthController {
     }
 
     /**
-     * 会员登录
+     * 统一会员登录（ACCOUNT_PASSWORD / PHONE_CODE / PHONE_PASSWORD / ACCOUNT_CODE）
      *
-     * @param dto 登录请求（含 captchaToken）
-     * @return 登录响应
+     * @param dto     登录请求（含 loginType / account / password / code / captchaToken）
+     * @param request HTTP 请求（用于解析真实客户端 IP）
+     * @return 登录响应（含 token 与昵称/头像）
      */
     @PostMapping("/login")
-    public Result<MemberLoginVO> login(@Valid @RequestBody MemberLoginDTO dto) {
-        return Result.success(memberAuthService.login(dto));
+    public Result<MemberLoginVO> login(@Valid @RequestBody MemberLoginDTO dto,
+                                       HttpServletRequest request) {
+        return Result.success(memberAuthService.login(dto, request));
     }
 }

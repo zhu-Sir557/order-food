@@ -4,6 +4,8 @@ import com.aliyun.oss.OSS;
 import com.aliyun.oss.model.PutObjectRequest;
 import com.restaurant.common.BizException;
 import com.restaurant.service.FileService;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.UUID;
@@ -56,6 +58,31 @@ public class FileServiceImpl implements FileService {
             return url;
         } catch (Exception e) {
             log.error("文件上传到OSS失败", e);
+            throw new BizException("文件上传失败: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public String upload(byte[] data, String ext) {
+        if (data == null || data.length == 0) {
+            throw new BizException("上传文件不能为空");
+        }
+        if (ext == null || ext.isBlank()) {
+            ext = "bin";
+        }
+
+        // 头像库等程序化上传统一放在 avatars/ 目录下
+        String fileName = "avatars/avatar_" + UUID.randomUUID().toString().replace("-", "") + "." + ext;
+
+        try {
+            ByteArrayInputStream inputStream = new ByteArrayInputStream(data);
+            PutObjectRequest putRequest = new PutObjectRequest(bucketName, fileName, inputStream, null);
+            ossClient.putObject(putRequest);
+            String url = urlPrefix + "/" + fileName;
+            log.info("字节文件上传到OSS成功: {}", url);
+            return url;
+        } catch (Exception e) {
+            log.error("字节文件上传到OSS失败", e);
             throw new BizException("文件上传失败: " + e.getMessage());
         }
     }

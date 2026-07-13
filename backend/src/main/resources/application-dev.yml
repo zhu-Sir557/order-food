@@ -54,6 +54,20 @@ sms:
     ip-daily-limit: 50
     fail-max: 5
     lock-minutes: 10
+    global-daily-limit: 500
+login:
+  defense:
+    login-fail-max: 5
+    login-lock-minutes: 15
+password:
+  min-length: 8
+profile:
+  nick-daily-limit: 3
+  avatar-daily-limit: 5
+avatar:
+  count: 12
+  init:
+    enabled: true
 aliyun:
   dypnsapi:
     endpoint: dypnsapi.aliyuncs.com

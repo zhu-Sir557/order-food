@@ -11,19 +11,19 @@
       </div>
 
       <van-tabs v-model:active="activeTab" swipeable>
-        <!-- ① 账号密码 -->
+        <!-- ① 账号 + 密码 -->
         <van-tab title="账号密码">
-          <van-form @submit="onPasswordLoginClick" class="login-form">
+          <van-form @submit="onAccountPasswordSubmit" class="login-form">
             <van-cell-group inset>
               <van-field
-                v-model="passwordForm.username"
-                name="username"
+                v-model="accountPwdForm.account"
+                name="account"
                 label="账号"
                 placeholder="请输入账号"
                 :rules="[{ required: true, message: '请输入账号' }]"
               />
               <van-field
-                v-model="passwordForm.password"
+                v-model="accountPwdForm.password"
                 type="password"
                 name="password"
                 label="密码"
@@ -38,7 +38,7 @@
                 block
                 round
                 size="large"
-                :loading="passwordLoading"
+                :loading="loading"
                 loading-text="登录中..."
                 native-type="submit"
               >
@@ -53,12 +53,12 @@
           </van-form>
         </van-tab>
 
-        <!-- ② 手机验证码 -->
+        <!-- ② 手机号 + 验证码 -->
         <van-tab title="手机验证码">
-          <van-form @submit="onSmsLoginClick" class="login-form">
+          <van-form @submit="onPhoneCodeSubmit" class="login-form">
             <van-cell-group inset>
               <van-field
-                v-model="smsForm.phone"
+                v-model="phoneCodeForm.phone"
                 type="tel"
                 name="phone"
                 label="手机号"
@@ -66,19 +66,19 @@
                 maxlength="11"
                 :rules="[
                   { required: true, message: '请输入手机号' },
-                  { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号' }
+                  { pattern: PHONE_REGEX, message: '请输入正确的手机号' }
                 ]"
               >
                 <template #button>
                   <van-button
                     size="small"
                     type="primary"
-                    :disabled="countdownTime > 0"
-                    @click="onSendCodeClick"
+                    :disabled="countdown > 0"
+                    @click="onSendPhoneCode"
                   >
                     <van-count-down
-                      v-if="countdownTime > 0"
-                      :time="countdownTime"
+                      v-if="countdown > 0"
+                      :time="countdown"
                       format="ss"
                       @finish="onCountdownFinish"
                     />
@@ -87,7 +87,7 @@
                 </template>
               </van-field>
               <van-field
-                v-model="smsForm.code"
+                v-model="phoneCodeForm.code"
                 type="tel"
                 name="code"
                 label="验证码"
@@ -103,7 +103,7 @@
                 block
                 round
                 size="large"
-                :loading="smsLoading"
+                :loading="loading"
                 loading-text="登录中..."
                 native-type="submit"
               >
@@ -114,17 +114,120 @@
             <div class="tip-text">未注册的手机号将自动创建账号</div>
           </van-form>
         </van-tab>
+
+        <!-- ③ 手机号 + 密码 -->
+        <van-tab title="手机密码">
+          <van-form @submit="onPhonePasswordSubmit" class="login-form">
+            <van-cell-group inset>
+              <van-field
+                v-model="phonePwdForm.phone"
+                type="tel"
+                name="phone"
+                label="手机号"
+                placeholder="请输入手机号"
+                maxlength="11"
+                :rules="[
+                  { required: true, message: '请输入手机号' },
+                  { pattern: PHONE_REGEX, message: '请输入正确的手机号' }
+                ]"
+              />
+              <van-field
+                v-model="phonePwdForm.password"
+                type="password"
+                name="password"
+                label="密码"
+                placeholder="请输入密码"
+                :rules="[{ required: true, message: '请输入密码' }]"
+              />
+            </van-cell-group>
+
+            <div class="login-btn">
+              <van-button
+                type="primary"
+                block
+                round
+                size="large"
+                :loading="loading"
+                loading-text="登录中..."
+                native-type="submit"
+              >
+                登录
+              </van-button>
+            </div>
+
+            <div class="register-link">
+              还没有密码？
+              <span @click="router.push('/set-password')">去设置</span>
+            </div>
+          </van-form>
+        </van-tab>
+
+        <!-- ④ 账号 + 验证码 -->
+        <van-tab title="账号验证码">
+          <van-form @submit="onAccountCodeSubmit" class="login-form">
+            <van-cell-group inset>
+              <van-field
+                v-model="accountCodeForm.account"
+                name="account"
+                label="账号"
+                placeholder="请输入账号"
+                :rules="[{ required: true, message: '请输入账号' }]"
+              />
+              <van-field
+                v-model="accountCodeForm.code"
+                type="tel"
+                name="code"
+                label="验证码"
+                placeholder="请输入6位验证码"
+                maxlength="6"
+                :rules="[{ required: true, message: '请输入验证码' }]"
+              >
+                <template #button>
+                  <van-button
+                    size="small"
+                    type="primary"
+                    :disabled="countdown2 > 0"
+                    @click="onSendAccountCode"
+                  >
+                    <van-count-down
+                      v-if="countdown2 > 0"
+                      :time="countdown2"
+                      format="ss"
+                      @finish="onCountdownFinish2"
+                    />
+                    <span v-else>获取验证码</span>
+                  </van-button>
+                </template>
+              </van-field>
+            </van-cell-group>
+
+            <div class="login-btn">
+              <van-button
+                type="primary"
+                block
+                round
+                size="large"
+                :loading="loading"
+                loading-text="登录中..."
+                native-type="submit"
+              >
+                登录
+              </van-button>
+            </div>
+
+            <div class="tip-text">验证码将发送至该账号已绑定的手机号</div>
+          </van-form>
+        </van-tab>
       </van-tabs>
     </div>
 
-    <!-- 滑块验证弹窗（账号密码登录 & 获取验证码共用） -->
+    <!-- 滑块验证弹窗（四种登录 / 发码共用） -->
     <van-popup
       v-model:show="showCaptcha"
       round
       closeable
       close-icon="cross"
       :style="{ width: '340px', padding: '20px' }"
-      @close="onCaptchaClose"
     >
       <div class="captcha-popup-title">滑动验证</div>
       <SliderCaptcha
@@ -143,127 +246,179 @@ import { showToast } from 'vant'
 import { useMemberStore } from '@/store/modules/member'
 import SliderCaptcha from '@/components/SliderCaptcha.vue'
 import { sendSmsCode } from '@/api/sms'
+import type { UnifiedLoginData } from '@/types'
 
 const memberStore = useMemberStore()
 
-/** 当前激活的 Tab：0=账号密码，1=手机验证码 */
+/** 手机号正则（与后端 ^1[3-9]\d{9}$ 一致） */
+const PHONE_REGEX = /^1[3-9]\d{9}$/
+
+/** 当前激活的 Tab：0=账号密码 1=手机验证码 2=手机密码 3=账号验证码 */
 const activeTab = ref(0)
-
-const passwordForm = reactive({
-  username: '',
-  password: '',
-})
-
-const smsForm = reactive({
-  phone: '',
-  code: '',
-})
-
+/** 统一登录按钮 loading（四种方式共用） */
+const loading = ref(false)
 const showCaptcha = ref(false)
-/** 滑块用途：password=账号密码登录，sms=获取短信验证码 */
-const captchaPurpose = ref<'password' | 'sms'>('password')
 const captchaToken = ref('')
 
-const passwordLoading = ref(false)
-const smsLoading = ref(false)
+const accountPwdForm = reactive({ account: '', password: '' })
+const phoneCodeForm = reactive({ phone: '', code: '' })
+const phonePwdForm = reactive({ phone: '', password: '' })
+const accountCodeForm = reactive({ account: '', code: '' })
+
 /** 获取验证码倒计时（毫秒）；>0 时按钮禁用并显示剩余秒 */
-const countdownTime = ref(0)
+const countdown = ref(0)
+const countdown2 = ref(0)
 
-/** 账号密码登录：点击登录 → 弹滑块 */
-const onPasswordLoginClick = (): void => {
-  captchaToken.value = ''
-  captchaPurpose.value = 'password'
-  showCaptcha.value = true
-}
+/** 滑块验证通过后待执行的操作（携带一次性 captchaToken） */
+let afterCaptcha: ((token: string) => void) | null = null
 
-/** 获取验证码：校验手机号 → 弹滑块 */
-const onSendCodeClick = (): void => {
-  if (!/^1[3-9]\d{9}$/.test(smsForm.phone)) {
-    showToast('请输入正确的手机号')
-    return
-  }
+/** 打开滑块验证弹窗，并记录通过后的回调 */
+const openCaptcha = (cb: (token: string) => void): void => {
   captchaToken.value = ''
-  captchaPurpose.value = 'sms'
+  afterCaptcha = cb
   showCaptcha.value = true
 }
 
 /** 滑块验证成功 */
-const onCaptchaSuccess = async (token: string): Promise<void> => {
+const onCaptchaSuccess = (token: string): void => {
   captchaToken.value = token
   showCaptcha.value = false
-  if (captchaPurpose.value === 'password') {
-    await doPasswordLogin()
-  } else {
-    await doSendSmsCode(token)
-  }
+  const cb = afterCaptcha
+  afterCaptcha = null
+  if (cb) cb(token)
 }
 
 /** 滑块验证失败 */
 const onCaptchaFail = (): void => {
   captchaToken.value = ''
+  afterCaptcha = null
 }
 
-/** 弹窗关闭 */
-const onCaptchaClose = (): void => {
-  captchaToken.value = ''
-}
-
-/** 账号密码登录（滑块通过后） */
-const doPasswordLogin = async (): Promise<void> => {
-  passwordLoading.value = true
+/** 统一登录调用（四种方式共用） */
+const doLogin = async (data: UnifiedLoginData): Promise<void> => {
+  loading.value = true
   try {
-    await memberStore.login({
-      username: passwordForm.username,
-      password: passwordForm.password,
-      captchaToken: captchaToken.value,
-    })
+    await memberStore.login(data)
     showToast('登录成功')
     router.replace('/me')
   } catch (error) {
     console.error('登录失败:', error)
     captchaToken.value = ''
   } finally {
-    passwordLoading.value = false
+    loading.value = false
   }
 }
 
-/** 发送短信验证码（滑块通过后） */
-const doSendSmsCode = async (token: string): Promise<void> => {
-  try {
-    await sendSmsCode(smsForm.phone, token)
-    showToast('验证码已发送')
-    countdownTime.value = 60 * 1000
-  } catch (error) {
-    console.error('发送验证码失败:', error)
-    captchaToken.value = ''
-  }
+/** ① 账号密码登录：弹滑块 → 统一登录 */
+const onAccountPasswordSubmit = (): void => {
+  openCaptcha((token) =>
+    doLogin({
+      loginType: 'ACCOUNT_PASSWORD',
+      account: accountPwdForm.account,
+      password: accountPwdForm.password,
+      captchaToken: token,
+    })
+  )
 }
 
-/** 倒计时结束 */
-const onCountdownFinish = (): void => {
-  countdownTime.value = 0
-}
-
-/** 短信验证码登录 */
-const onSmsLoginClick = async (): Promise<void> => {
-  if (!/^1[3-9]\d{9}$/.test(smsForm.phone)) {
+/** ③ 手机密码登录：弹滑块 → 统一登录 */
+const onPhonePasswordSubmit = (): void => {
+  if (!PHONE_REGEX.test(phonePwdForm.phone)) {
     showToast('请输入正确的手机号')
     return
   }
-  if (!smsForm.code) {
+  openCaptcha((token) =>
+    doLogin({
+      loginType: 'PHONE_PASSWORD',
+      account: phonePwdForm.phone,
+      password: phonePwdForm.password,
+      captchaToken: token,
+    })
+  )
+}
+
+/** ② 手机验证码：先发码（滑块校验） */
+const onSendPhoneCode = (): void => {
+  if (!PHONE_REGEX.test(phoneCodeForm.phone)) {
+    showToast('请输入正确的手机号')
+    return
+  }
+  openCaptcha(async (token) => {
+    try {
+      await sendSmsCode(phoneCodeForm.phone, token)
+      showToast('验证码已发送')
+      countdown.value = 60 * 1000
+    } catch (error) {
+      console.error('发送验证码失败:', error)
+      captchaToken.value = ''
+    }
+  })
+}
+
+/** ② 手机验证码：提交登录（再次滑块校验，统一登录携带 code） */
+const onPhoneCodeSubmit = (): void => {
+  if (!PHONE_REGEX.test(phoneCodeForm.phone)) {
+    showToast('请输入正确的手机号')
+    return
+  }
+  if (!phoneCodeForm.code) {
     showToast('请输入验证码')
     return
   }
-  smsLoading.value = true
-  try {
-    await memberStore.smsLogin({ phone: smsForm.phone, code: smsForm.code })
-    showToast('登录成功')
-    router.replace('/me')
-  } catch (error) {
-    console.error('短信登录失败:', error)
-  } finally {
-    smsLoading.value = false
+  openCaptcha((token) =>
+    doLogin({
+      loginType: 'PHONE_CODE',
+      account: phoneCodeForm.phone,
+      code: phoneCodeForm.code,
+      captchaToken: token,
+    })
+  )
+}
+
+/** ④ 账号验证码：先发码（滑块校验，发送至已绑定手机） */
+const onSendAccountCode = (): void => {
+  if (!accountCodeForm.account) {
+    showToast('请输入账号')
+    return
   }
+  openCaptcha(async (token) => {
+    try {
+      await memberStore.sendLoginCode({ account: accountCodeForm.account, captchaToken: token })
+      showToast('验证码已发送')
+      countdown2.value = 60 * 1000
+    } catch (error) {
+      console.error('发送验证码失败:', error)
+      captchaToken.value = ''
+    }
+  })
+}
+
+/** ④ 账号验证码：提交登录（再次滑块校验，统一登录携带 code） */
+const onAccountCodeSubmit = (): void => {
+  if (!accountCodeForm.account) {
+    showToast('请输入账号')
+    return
+  }
+  if (!accountCodeForm.code) {
+    showToast('请输入验证码')
+    return
+  }
+  openCaptcha((token) =>
+    doLogin({
+      loginType: 'ACCOUNT_CODE',
+      account: accountCodeForm.account,
+      code: accountCodeForm.code,
+      captchaToken: token,
+    })
+  )
+}
+
+const onCountdownFinish = (): void => {
+  countdown.value = 0
+}
+
+const onCountdownFinish2 = (): void => {
+  countdown2.value = 0
 }
 </script>
 

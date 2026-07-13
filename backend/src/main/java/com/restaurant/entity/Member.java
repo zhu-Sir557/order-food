@@ -36,6 +36,12 @@ public class Member {
     /** 手机号（短信验证码登录） */
     private String phone;
 
+    /** 昵称 */
+    private String nickname;
+
+    /** 头像OSS地址（直接存url） */
+    private String avatar;
+
     /** 创建时间 */
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;

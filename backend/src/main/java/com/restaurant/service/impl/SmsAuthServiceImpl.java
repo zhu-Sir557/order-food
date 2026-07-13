@@ -14,6 +14,8 @@ import com.restaurant.dto.SmsSendRequest;
 import com.restaurant.entity.Member;
 import com.restaurant.mapper.MemberMapper;
 import com.restaurant.service.CaptchaService;
+import com.restaurant.service.LoginDefenseService;
+import com.restaurant.service.MemberProfileService;
 import com.restaurant.service.SmsAuthService;
 import com.restaurant.service.SmsCodeStore;
 import com.restaurant.util.JwtUtil;
@@ -44,6 +46,8 @@ public class SmsAuthServiceImpl implements SmsAuthService {
     private final SmsRateLimitProperties rateLimitProps;
     private final AliyunDypnsapiProperties dypnsapiProperties;
     private final CaptchaService captchaService;
+    private final MemberProfileService memberProfileService;
+    private final LoginDefenseService loginDefenseService;
 
     @Override
     public void sendCode(SmsSendRequest req, String clientIp) {
@@ -54,12 +58,12 @@ public class SmsAuthServiceImpl implements SmsAuthService {
             throw new BizException(ResultCode.SMS_PHONE_INVALID, "请输入正确的手机号");
         }
 
-        // ② Q2 滑块前置：限频校验之前先校验并消费 captchaToken
+        // ② 滑块前置：限频校验之前先校验并消费 captchaToken
         if (!captchaService.verifyAndConsumeCaptcha(req.getCaptchaToken())) {
             throw new BizException(ResultCode.CAPTCHA_INVALID, "验证码无效或未通过");
         }
 
-        // ③ 限频校验
+        // ③ 限频校验（含全站单日发送总量上限）
         RateLimitResult r = rateLimiter.canSend(phone, clientIp);
         if (!r.isAllowed()) {
             if (r.isLocked()) {
@@ -75,6 +79,9 @@ public class SmsAuthServiceImpl implements SmsAuthService {
             if (r.getReason() == RateLimitResult.Reason.IP_DAILY) {
                 throw new BizException(ResultCode.RATE_LIMIT_IP_DAILY, "当前网络发送过于频繁，请稍后再试");
             }
+            if (r.getReason() == RateLimitResult.Reason.GLOBAL_DAILY) {
+                throw new BizException(ResultCode.RATE_LIMIT_GLOBAL_DAILY, "今日验证码发送总量已达上限，请明天再试");
+            }
             // 兜底（理论上不会走到这里）
             throw new BizException(ResultCode.RATE_LIMIT_PHONE_INTERVAL, "发送过于频繁，请稍后再试");
         }
@@ -88,27 +95,19 @@ public class SmsAuthServiceImpl implements SmsAuthService {
         request.setInterval(60L);
         request.setValidTime((long) rateLimitProps.getCodeTtlSeconds());
 
-        // 生成 6 位验证码占位值，并换算有效分钟数（= CodeTtlSeconds / 60）
         String code = RandomUtil.randomNumbers(6);
         int validMinutes = rateLimitProps.getCodeTtlSeconds() / 60;
-        // 模板变量：${code} 与 ${min} 用户模板均包含，二者都必须传入，缺一不可；
-        // 用户短信中实际收到的验证码即我们传入的本地 ${code}，故下方以本地 code 作为 Redis 存储值
-        // （仅当阿里云回传的 verifyCode 确有填充时才优先采用它）。
         request.setTemplateParam("{\"code\":\"" + code + "\",\"min\":\"" + validMinutes + "\"}");
 
         SendSmsVerifyCodeResponse response;
         try {
             response = dypnsapiClient.sendSmsVerifyCode(request);
         } catch (Exception e) {
-            // 绝不透传阿里云原始错误
             log.warn("阿里云发送验证码异常: phone={}, err={}", SmsCodeStore.maskPhone(phone), e.getMessage());
             throw new BizException(ResultCode.SMS_SEND_FAILED, "验证码发送失败，请稍后再试");
         }
 
         SendSmsVerifyCodeResponseBody body = response.getBody();
-        // 成功判定：阿里云返回 code=OK 表示短信已下发；其余值（如 biz.FREQUENCY）为失败。
-        // 注意：本账号/SDK 即便 ReturnVerifyCode=true，响应 model.getVerifyCode() 仍为空白，
-        // 用户短信中实际收到的验证码是我们在 TemplateParam 中传入的本地 code。
         if (body == null || !"OK".equals(body.getCode())) {
             log.warn("阿里云发送验证码返回异常: phone={}, code={}, msg={}",
                     SmsCodeStore.maskPhone(phone),
@@ -117,8 +116,6 @@ public class SmsAuthServiceImpl implements SmsAuthService {
             throw new BizException(ResultCode.SMS_SEND_FAILED, "验证码发送失败，请稍后再试");
         }
 
-        // 验证码取值：优先采用阿里云回传的 verifyCode（若其确有填充），否则回退到本地 code
-        // （即短信正文携带的验证码，保证登录时用户凭短信收到的码能比对通过）。
         String verifyCode = (body.getModel() != null && body.getModel().getVerifyCode() != null
                 && !body.getModel().getVerifyCode().isBlank())
                 ? body.getModel().getVerifyCode()
@@ -131,28 +128,26 @@ public class SmsAuthServiceImpl implements SmsAuthService {
         smsCodeStore.save(phone, verifyCode, rateLimitProps.getCodeTtlSeconds());
         rateLimiter.onSendSuccess(phone, clientIp);
 
-        // ⑦ 不向前端返回明文验证码
         log.info("短信验证码已下发: phone={}", SmsCodeStore.maskPhone(phone));
     }
 
     @Override
-    public MemberLoginVO login(SmsLoginRequest req) {
-        String phone = req.getPhone();
-
+    public MemberLoginVO phoneCodeLogin(String phone, String code, String clientIp) {
         // 锁定期间禁止登录（与发码共用锁定态）
         if (rateLimiter.isLocked(phone)) {
             throw new BizException(ResultCode.RATE_LIMIT_LOCKED, "验证码错误次数过多，请 10 分钟后再试");
         }
 
         // ① 取验证码
-        String code = smsCodeStore.get(phone);
-        if (code == null || code.isBlank()) {
+        String stored = smsCodeStore.get(phone);
+        if (stored == null || stored.isBlank()) {
             throw new BizException(ResultCode.SMS_CODE_EXPIRED, "验证码已过期，请重新获取");
         }
 
-        // ② 比对
-        if (!code.equals(req.getCode())) {
+        // ② 比对（错误则触发短信验证码锁定 + 登录失败锁定）
+        if (!stored.equals(code)) {
             FailResult fail = rateLimiter.onVerifyFail(phone);
+            loginDefenseService.onLoginFail(phone, clientIp);
             if (fail.isLocked()) {
                 throw new BizException(ResultCode.RATE_LIMIT_LOCKED, "验证码错误次数过多，请 10 分钟后再试");
             }
@@ -188,15 +183,37 @@ public class SmsAuthServiceImpl implements SmsAuthService {
             member.setPhone(phone);
             member.setPassword(null);
             member.setBalance(BigDecimal.ZERO);
+            // F3：注册默认昵称 + 随机头像
+            member.setNickname(memberProfileService.generateDefaultNickname());
+            member.setAvatar(memberProfileService.randomAvatarUrl());
             memberMapper.insert(member);
             log.info("短信验证码自动注册会员: phone={}, memberId={}", SmsCodeStore.maskPhone(phone), member.getId());
         } else {
             log.info("短信验证码登录成功: phone={}, memberId={}", SmsCodeStore.maskPhone(phone), member.getId());
         }
 
-        // 签发 JWT（与现有会员体系一致：role=MEMBER，有效期 720h）
+        return toLoginVO(member);
+    }
+
+    @Override
+    @Deprecated
+    public MemberLoginVO login(SmsLoginRequest req) {
+        // 旧接口：直接委托 phoneCodeLogin（不校验登录侧滑块，沿用发送侧滑块）
+        return phoneCodeLogin(req.getPhone(), req.getCode(), null);
+    }
+
+    /**
+     * 构建登录响应 VO（生成 JWT，含昵称/头像）
+     *
+     * @param member 会员实体
+     * @return 登录响应
+     */
+    private MemberLoginVO toLoginVO(Member member) {
         Map<String, Object> claims = new HashMap<>(4);
         claims.put("role", "MEMBER");
+        if (member.getTempUserId() != null) {
+            claims.put("tempUserId", member.getTempUserId());
+        }
         String token = jwtUtil.generateToken(String.valueOf(member.getId()), claims, 720);
 
         MemberLoginVO vo = new MemberLoginVO();
@@ -204,6 +221,8 @@ public class SmsAuthServiceImpl implements SmsAuthService {
         vo.setMemberId(member.getId());
         vo.setUsername(member.getUsername());
         vo.setBalance(member.getBalance());
+        vo.setNickname(member.getNickname());
+        vo.setAvatar(member.getAvatar());
         return vo;
     }
 }

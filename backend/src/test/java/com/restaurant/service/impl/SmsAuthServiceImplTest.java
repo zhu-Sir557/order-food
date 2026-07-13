@@ -13,6 +13,8 @@ import com.restaurant.dto.SmsSendRequest;
 import com.restaurant.entity.Member;
 import com.restaurant.mapper.MemberMapper;
 import com.restaurant.service.CaptchaService;
+import com.restaurant.service.LoginDefenseService;
+import com.restaurant.service.MemberProfileService;
 import com.restaurant.service.SmsCodeStore;
 import com.restaurant.service.SmsAuthService;
 import com.restaurant.util.JwtUtil;
@@ -60,6 +62,8 @@ class SmsAuthServiceImplTest {
     @Mock MemberMapper memberMapper;
     @Mock JwtUtil jwtUtil;
     @Mock CaptchaService captchaService;
+    @Mock MemberProfileService memberProfileService;
+    @Mock LoginDefenseService loginDefenseService;
 
     SmsRateLimitProperties rateLimitProps = new SmsRateLimitProperties();
     AliyunDypnsapiProperties dypnsapiProperties = new AliyunDypnsapiProperties();
@@ -74,7 +78,8 @@ class SmsAuthServiceImplTest {
         dypnsapiProperties.setSignName("测试签名");
         dypnsapiProperties.setTemplateCode("SMS_TEST");
         service = new SmsAuthServiceImpl(smsCodeStore, rateLimiter, dypnsapiClient,
-                memberMapper, jwtUtil, rateLimitProps, dypnsapiProperties, captchaService);
+                memberMapper, jwtUtil, rateLimitProps, dypnsapiProperties, captchaService,
+                memberProfileService, loginDefenseService);
     }
 
     private SmsSendRequest sendReq(String phone, String token) {

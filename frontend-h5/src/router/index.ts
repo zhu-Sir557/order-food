@@ -63,6 +63,24 @@ const routes = [
     meta: { title: '注册' },
   },
   {
+    path: '/bind-phone',
+    name: 'BindPhone',
+    component: () => import('@/views/bind-phone/index.vue'),
+    meta: { title: '绑定手机' },
+  },
+  {
+    path: '/set-password',
+    name: 'SetPassword',
+    component: () => import('@/views/set-password/index.vue'),
+    meta: { title: '设置密码' },
+  },
+  {
+    path: '/avatar',
+    name: 'Avatar',
+    component: () => import('@/views/avatar/index.vue'),
+    meta: { title: '更换头像' },
+  },
+  {
     path: '/balance',
     name: 'Balance',
     component: () => import('@/views/balance/index.vue'),

@@ -22,3 +22,18 @@ aliyun:
   dypnsapi:
     access-key-id: <your-dypnsapi-access-key-id>
     access-key-secret: <your-dypnsapi-access-key-secret>
+
+# 以下为账号增强相关默认值（与 application-dev.yml 保持一致，本地可覆盖）
+# login:
+#   defense:
+#     login-fail-max: 5
+#     login-lock-minutes: 15
+# password:
+#   min-length: 8
+# profile:
+#   nick-daily-limit: 3
+#   avatar-daily-limit: 5
+# avatar:
+#   count: 12
+#   init:
+#     enabled: true

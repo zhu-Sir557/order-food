@@ -1,110 +1,5 @@
 classDiagram
-    %% ===== 配置 / 外部依赖 =====
-    class AliyunDypnsapiProperties {
-        +String accessKeyId
-        +String accessKeySecret
-        +String signName
-        +String templateCode
-        +String endpoint
-        +getAccessKeyId() String
-        +getSignName() String
-        +getTemplateCode() String
-    }
-
-    class SmsRateLimitProperties {
-        +int codeTtlSeconds = 300
-        +int intervalSeconds = 60
-        +int phoneDailyLimit = 10
-        +int ipDailyLimit = 50
-        +int failMax = 5
-        +int lockMinutes = 10
-        +getCodeTtlSeconds() int
-        +getIntervalSeconds() int
-        +getPhoneDailyLimit() int
-    }
-
-    class DypnsapiClient {
-        <<阿里云官方 SDK>>
-        +sendSmsVerifyCode(phone, signName, templateCode, interval, returnVerifyCode) VerifyCode
-    }
-
-    %% ===== 验证码存储 =====
-    class SmsCodeStore {
-        <<interface>>
-        +save(phone, code, ttlSeconds) void
-        +get(phone) String
-        +delete(phone) void
-        +exists(phone) boolean
-    }
-
-    class RedisSmsCodeStore {
-        -StringRedisTemplate redis
-        -String KEY_PREFIX = "sms:code:"
-        +save(phone, code, ttlSeconds) void
-        +get(phone) String
-        +delete(phone) void
-        +exists(phone) boolean
-    }
-    RedisSmsCodeStore ..|> SmsCodeStore
-
-    %% ===== 限频组件 =====
-    class SmsRateLimiter {
-        -StringRedisTemplate redis
-        -SmsRateLimitProperties props
-        +canSend(phone, ip) RateLimitResult
-        +onSendSuccess(phone, ip) void
-        +onVerifyFail(phone) FailResult
-        +isLocked(phone) boolean
-    }
-    SmsRateLimiter --> SmsRateLimitProperties : reads
-
-    %% ===== 业务服务 =====
-    class SmsAuthService {
-        <<interface>>
-        +sendCode(SmsSendRequest) void
-        +login(SmsLoginRequest) MemberLoginVO
-    }
-
-    class SmsAuthServiceImpl {
-        -SmsCodeStore smsCodeStore
-        -SmsRateLimiter rateLimiter
-        -DypnsapiClient dypnsapiClient
-        -MemberMapper memberMapper
-        -JwtUtil jwtUtil
-        -SmsRateLimitProperties props
-        +sendCode(SmsSendRequest) void
-        +login(SmsLoginRequest) MemberLoginVO
-        -autoRegisterOrGetMember(phone) Member
-        -buildLoginVO(member) MemberLoginVO
-    }
-    SmsAuthServiceImpl ..|> SmsAuthService
-    SmsAuthServiceImpl --> SmsCodeStore : uses
-    SmsAuthServiceImpl --> SmsRateLimiter : uses
-    SmsAuthServiceImpl --> DypnsapiClient : calls
-    SmsAuthServiceImpl --> MemberMapper : uses
-    SmsAuthServiceImpl --> JwtUtil : signs
-    SmsAuthServiceImpl ..> Member : reads/writes
-    SmsAuthServiceImpl ..> MemberLoginVO : returns
-
-    %% ===== 控制器 / DTO =====
-    class SmsController {
-        -SmsAuthService smsAuthService
-        +send(SmsSendRequest) Result~Void~
-        +login(SmsLoginRequest) Result~MemberLoginVO~
-    }
-    SmsController --> SmsAuthService : calls
-    SmsController ..> SmsSendRequest : maps
-    SmsController ..> SmsLoginRequest : maps
-
-    class SmsSendRequest {
-        +String phone
-    }
-    class SmsLoginRequest {
-        +String phone
-        +String code
-    }
-
-    %% ===== 实体 / VO（复用） =====
+    %% ===== 实体 =====
     class Member {
         +Long id
         +String username
@@ -112,19 +7,231 @@ classDiagram
         +BigDecimal balance
         +Long tempUserId
         +String phone
+        +String nickname
+        +String avatar
         +LocalDateTime createTime
         +LocalDateTime updateTime
         +Integer deleted
     }
+    class Avatar {
+        +Long id
+        +String ossUrl
+        +Integer sort
+        +LocalDateTime createTime
+        +LocalDateTime updateTime
+        +Integer deleted
+    }
+
+    %% ===== DTO（入参） =====
+    class MemberLoginDTO {
+        +String loginType
+        +String account
+        +String password
+        +String code
+        +String captchaToken
+    }
+    class BindPhoneDTO {
+        +String phone
+        +String code
+        +String captchaToken
+    }
+    class SetPasswordDTO {
+        +String password
+        +String captchaToken
+    }
+    class UpdateNicknameDTO {
+        +String nickname
+    }
+    class UpdateAvatarDTO {
+        +Long avatarId
+    }
+    class SendLoginCodeDTO {
+        +String account
+        +String captchaToken
+    }
+
+    %% ===== VO（出参） =====
     class MemberLoginVO {
         +String token
         +Long memberId
         +String username
         +BigDecimal balance
+        +String nickname
+        +String avatar
+    }
+    class MemberInfoVO {
+        +Long memberId
+        +String username
+        +BigDecimal balance
+        +String createTime
+        +String nickname
+        +String avatar
+    }
+    class AvatarVO {
+        +Long id
+        +String ossUrl
+    }
+    class ChangeLimitVO {
+        +Integer remaining
     }
 
-    %% ===== 配置类 =====
-    class DypnsapiConfig {
-        +dypnsapiClient(AliyunDypnsapiProperties) DypnsapiClient
+    %% ===== Service 接口 =====
+    class MemberAuthService {
+        <<interface>>
+        +login(MemberLoginDTO, HttpServletRequest) MemberLoginVO
+        +register(MemberRegisterDTO, Long) MemberLoginVO
     }
-    DypnsapiConfig --> AliyunDypnsapiProperties : reads
+    class SmsAuthService {
+        <<interface>>
+        +sendCode(SmsSendRequest, String) void
+        +phoneCodeLogin(String, String, String) MemberLoginVO
+    }
+    class MemberProfileService {
+        <<interface>>
+        +bindPhone(Long, BindPhoneDTO) void
+        +setPassword(Long, SetPasswordDTO) void
+        +updateNickname(Long, UpdateNicknameDTO) ChangeLimitVO
+        +updateAvatar(Long, UpdateAvatarDTO) ChangeLimitVO
+        +sendLoginCode(SendLoginCodeDTO, String) void
+        +listAvatars() List~AvatarVO~
+        +generateDefaultNickname() String
+        +randomAvatarUrl() String
+    }
+    class LoginDefenseService {
+        <<interface>>
+        +isAccountLocked(String) boolean
+        +isIpLocked(String) boolean
+        +onLoginFail(String, String) LoginFailResult
+        +resetOnSuccess(String, String) void
+    }
+    class FileService {
+        <<interface>>
+        +upload(MultipartFile) String
+        +upload(byte[], String) String
+    }
+    class AvatarInitService {
+        <<interface>>
+        +initIfNeeded() void
+    }
+
+    %% ===== Service 实现 =====
+    class MemberAuthServiceImpl {
+        -MemberMapper memberMapper
+        -JwtUtil jwtUtil
+        -BCryptPasswordEncoder passwordEncoder
+        -CaptchaService captchaService
+        -LoginDefenseService loginDefenseService
+        -SmsAuthService smsAuthService
+        -SmsCodeStore smsCodeStore
+        -MemberProfileService memberProfileService
+    }
+    class SmsAuthServiceImpl {
+        -SmsCodeStore smsCodeStore
+        -SmsRateLimiter rateLimiter
+        -MemberMapper memberMapper
+        -JwtUtil jwtUtil
+        -MemberProfileService memberProfileService
+    }
+    class MemberProfileServiceImpl {
+        -MemberMapper memberMapper
+        -AvatarMapper avatarMapper
+        -SmsCodeStore smsCodeStore
+        -SmsRateLimiter rateLimiter
+        -CaptchaService captchaService
+        -StringRedisTemplate redisTemplate
+    }
+    class LoginDefenseServiceImpl {
+        -StringRedisTemplate redisTemplate
+        -LoginDefenseProperties props
+    }
+    class FileServiceImpl {
+        -OSS ossClient
+        -String bucketName
+        -String urlPrefix
+    }
+    class AvatarInitServiceImpl {
+        -FileService fileService
+        -AvatarMapper avatarMapper
+        -int avatarCount
+        -boolean enabled
+    }
+
+    %% ===== 配置 / 限流组件 =====
+    class SmsRateLimitProperties {
+        +int codeTtlSeconds
+        +int intervalSeconds
+        +int phoneDailyLimit
+        +int ipDailyLimit
+        +int failMax
+        +int lockMinutes
+        +int globalDailyLimit
+    }
+    class LoginDefenseProperties {
+        +int loginFailMax
+        +int loginLockMinutes
+    }
+    class SmsRateLimiter {
+        -StringRedisTemplate redisTemplate
+        -SmsRateLimitProperties props
+        +canSend(String, String) RateLimitResult
+        +onSendSuccess(String, String) void
+        +onVerifyFail(String) FailResult
+    }
+
+    %% ===== Mapper =====
+    class MemberMapper {
+        <<Mapper>>
+    }
+    class AvatarMapper {
+        <<Mapper>>
+    }
+
+    %% ===== Controller =====
+    class H5MemberAuthController {
+        -MemberAuthService memberAuthService
+    }
+    class MemberProfileController {
+        -MemberProfileService memberProfileService
+    }
+
+    %% ===== 接口实现关系 =====
+    MemberAuthServiceImpl ..|> MemberAuthService
+    SmsAuthServiceImpl ..|> SmsAuthService
+    MemberProfileServiceImpl ..|> MemberProfileService
+    LoginDefenseServiceImpl ..|> LoginDefenseService
+    FileServiceImpl ..|> FileService
+    AvatarInitServiceImpl ..|> AvatarInitService
+
+    %% ===== 依赖关系 =====
+    MemberAuthServiceImpl --> MemberMapper
+    MemberAuthServiceImpl --> JwtUtil
+    MemberAuthServiceImpl --> CaptchaService
+    MemberAuthServiceImpl --> LoginDefenseService
+    MemberAuthServiceImpl --> SmsAuthService
+    MemberAuthServiceImpl --> SmsCodeStore
+    MemberAuthServiceImpl --> MemberProfileService
+
+    SmsAuthServiceImpl --> SmsCodeStore
+    SmsAuthServiceImpl --> SmsRateLimiter
+    SmsAuthServiceImpl --> MemberMapper
+    SmsAuthServiceImpl --> JwtUtil
+    SmsAuthServiceImpl --> MemberProfileService
+
+    MemberProfileServiceImpl --> MemberMapper
+    MemberProfileServiceImpl --> AvatarMapper
+    MemberProfileServiceImpl --> SmsCodeStore
+    MemberProfileServiceImpl --> SmsRateLimiter
+    MemberProfileServiceImpl --> CaptchaService
+
+    FileServiceImpl --> OSS
+    AvatarInitServiceImpl --> FileService
+    AvatarInitServiceImpl --> AvatarMapper
+
+    SmsRateLimiter --> SmsRateLimitProperties
+    LoginDefenseServiceImpl --> LoginDefenseProperties
+
+    MemberMapper ..> Member
+    AvatarMapper ..> Avatar
+
+    H5MemberAuthController --> MemberAuthService
+    MemberProfileController --> MemberProfileService

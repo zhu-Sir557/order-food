@@ -39,6 +39,7 @@ public class SmsRateLimiter {
     private static final String KEY_IP_LIMIT = "sms:send:limit:ip:";
     private static final String KEY_FAIL = "sms:fail:";
     private static final String KEY_LOCK = "sms:lock:";
+    private static final String KEY_GLOBAL_LIMIT = "sms:send:limit:global:";
 
     private final StringRedisTemplate redisTemplate;
     private final SmsRateLimitProperties props;
@@ -73,6 +74,11 @@ public class SmsRateLimiter {
         if (ipCount >= props.getIpDailyLimit()) {
             return RateLimitResult.ipDaily(Math.max(0, props.getIpDailyLimit() - ipCount));
         }
+        // ⑤ 全站单日发送总量上限（口径：全站合计）
+        int globalCount = currentCount(KEY_GLOBAL_LIMIT + today());
+        if (globalCount >= props.getGlobalDailyLimit()) {
+            return RateLimitResult.globalDaily(Math.max(0, props.getGlobalDailyLimit() - globalCount));
+        }
         return RateLimitResult.ok();
     }
 
@@ -86,6 +92,7 @@ public class SmsRateLimiter {
         redisTemplate.opsForValue().set(KEY_INTERVAL + phone, "1", props.getIntervalSeconds(), TimeUnit.SECONDS);
         incrementDaily(KEY_PHONE_LIMIT + today());
         incrementDaily(KEY_IP_LIMIT + today() + ":" + ip);
+        incrementDaily(KEY_GLOBAL_LIMIT + today());
     }
 
     /**

@@ -37,11 +37,13 @@ public class SmsController {
     }
 
     /**
-     * 短信验证码登录
+     * 短信验证码登录（已废弃，过渡期保留；请改用 {@code POST /api/h5/member/login}）
      *
      * @param req 登录请求（手机号 + 验证码）
      * @return 登录响应（含 JWT token）
+     * @deprecated 统一登录请使用 {@code /api/h5/member/login}
      */
+    @Deprecated
     @PostMapping("/login")
     public Result<MemberLoginVO> login(@Valid @RequestBody SmsLoginRequest req) {
         return Result.success(smsAuthService.login(req));

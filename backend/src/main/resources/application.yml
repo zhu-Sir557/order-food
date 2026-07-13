@@ -49,3 +49,29 @@ aliyun:
 # File Upload Configuration
 file:
   allowed-types: image/jpeg,image/png,image/gif,image/webp
+
+# 短信验证码限频（全局日发码上限默认值）
+sms:
+  rate-limit:
+    global-daily-limit: 500
+
+# 登录防暴破（账号/IP 维度失败锁定）
+login:
+  defense:
+    login-fail-max: 5
+    login-lock-minutes: 15
+
+# 会员密码
+password:
+  min-length: 8
+
+# 会员资料（昵称/头像）每日修改上限（自然日）
+profile:
+  nick-daily-limit: 3
+  avatar-daily-limit: 5
+
+# 头像库初始化
+avatar:
+  count: 12
+  init:
+    enabled: true

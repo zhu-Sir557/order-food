@@ -107,10 +107,25 @@ class SmsRateLimiterTest {
     }
 
     @Test
-    @DisplayName("onSendSuccess: 写间隔Key(TTL=interval)+递增单号/单IP日计数(到当日结束TTL)")
+    @DisplayName("canSend: 全站单日总量上限(global=500) → GLOBAL_DAILY")
+    void canSend_globalDaily() {
+        // ①锁定无 ②间隔无 ③单号未达 ④单IP未达 ⑤全站达 500
+        when(redisTemplate.getExpire(anyString(), any())).thenReturn(null);
+        when(ops.get("sms:send:limit:phone:" + TODAY)).thenReturn("0");
+        when(ops.get("sms:send:limit:ip:" + TODAY + ":" + IP)).thenReturn("0");
+        when(ops.get("sms:send:limit:global:" + TODAY)).thenReturn("500");
+
+        RateLimitResult r = limiter.canSend(PHONE, IP);
+        assertEquals(RateLimitResult.Reason.GLOBAL_DAILY, r.getReason());
+        assertEquals(0, r.getRemainCount());
+    }
+
+    @Test
+    @DisplayName("onSendSuccess: 写间隔Key(TTL=interval)+递增单号/单IP/全站日计数(到当日结束TTL)")
     void onSendSuccess() {
         when(ops.increment("sms:send:limit:phone:" + TODAY)).thenReturn(1L);
         when(ops.increment("sms:send:limit:ip:" + TODAY + ":" + IP)).thenReturn(1L);
+        when(ops.increment("sms:send:limit:global:" + TODAY)).thenReturn(1L);
 
         limiter.onSendSuccess(PHONE, IP);
 
@@ -118,8 +133,10 @@ class SmsRateLimiterTest {
                 eq((long) props.getIntervalSeconds()), eq(TimeUnit.SECONDS));
         verify(ops).increment("sms:send:limit:phone:" + TODAY);
         verify(ops).increment("sms:send:limit:ip:" + TODAY + ":" + IP);
+        verify(ops).increment("sms:send:limit:global:" + TODAY);
         verify(redisTemplate).expire(eq("sms:send:limit:phone:" + TODAY), anyLong(), eq(TimeUnit.SECONDS));
         verify(redisTemplate).expire(eq("sms:send:limit:ip:" + TODAY + ":" + IP), anyLong(), eq(TimeUnit.SECONDS));
+        verify(redisTemplate).expire(eq("sms:send:limit:global:" + TODAY), anyLong(), eq(TimeUnit.SECONDS));
     }
 
     @Test

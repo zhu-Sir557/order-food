@@ -44,6 +44,8 @@ public class MemberServiceImpl implements MemberService {
         vo.setMemberId(member.getId());
         vo.setUsername(member.getUsername());
         vo.setBalance(member.getBalance());
+        vo.setNickname(member.getNickname());
+        vo.setAvatar(member.getAvatar());
         if (member.getCreateTime() != null) {
             vo.setCreateTime(member.getCreateTime().format(FMT));
         }

@@ -31,4 +31,7 @@ public class SmsRateLimitProperties {
 
     /** 达错误上限后的锁定时长（分钟） */
     private int lockMinutes = 10;
+
+    /** 全站单日发送验证码总量上限（口径：全站合计） */
+    private int globalDailyLimit = 500;
 }

@@ -20,4 +20,10 @@ public class MemberLoginVO {
 
     /** 账户余额 */
     private BigDecimal balance;
+
+    /** 昵称 */
+    private String nickname;
+
+    /** 头像OSS地址 */
+    private String avatar;
 }

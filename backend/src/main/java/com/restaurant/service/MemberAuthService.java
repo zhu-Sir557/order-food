@@ -3,6 +3,7 @@ package com.restaurant.service;
 import com.restaurant.dto.MemberLoginDTO;
 import com.restaurant.dto.MemberRegisterDTO;
 import com.restaurant.vo.MemberLoginVO;
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * 会员认证服务接口
@@ -19,10 +20,11 @@ public interface MemberAuthService {
     MemberLoginVO register(MemberRegisterDTO dto, Long tempUserId);
 
     /**
-     * 登录（校验 captchaToken + 账号密码）
+     * 统一登录（按 loginType 分发四种组合，校验 captchaToken + 登录防暴破）
      *
-     * @param dto 登录请求
-     * @return 登录响应（含 JWT token）
+     * @param dto     登录请求（含 loginType / account / password / code / captchaToken）
+     * @param request HTTP 请求（用于解析真实客户端 IP）
+     * @return 登录响应（含 JWT token 与昵称/头像）
      */
-    MemberLoginVO login(MemberLoginDTO dto);
+    MemberLoginVO login(MemberLoginDTO dto, HttpServletRequest request);
 }

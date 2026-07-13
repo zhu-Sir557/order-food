@@ -18,6 +18,8 @@ export interface SmsLoginVO {
   memberId: number
   username: string
   balance: number
+  nickname?: string
+  avatar?: string
 }
 
 /** 兼容 store 入参类型别名 */

@@ -55,6 +55,11 @@ public class RateLimitResult {
         return new RateLimitResult(false, false, 0, remainCount, Reason.IP_DAILY);
     }
 
+    /** 全站单日发送总量上限 */
+    public static RateLimitResult globalDaily(int remainCount) {
+        return new RateLimitResult(false, false, 0, remainCount, Reason.GLOBAL_DAILY);
+    }
+
     /** 限频触发原因 */
     public enum Reason {
         /** 通过 */
@@ -66,6 +71,8 @@ public class RateLimitResult {
         /** 单号日上限 */
         PHONE_DAILY,
         /** 单 IP 日上限 */
-        IP_DAILY
+        IP_DAILY,
+        /** 全站单日总量上限 */
+        GLOBAL_DAILY
     }
 }

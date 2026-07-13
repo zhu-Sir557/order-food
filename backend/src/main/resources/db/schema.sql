@@ -149,3 +149,18 @@ CREATE TABLE `banner` (
     `deleted`     TINYINT      DEFAULT 0 COMMENT '逻辑删除：0未删除，1已删除',
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='轮播图表';
+
+-- --------------------------------------------
+-- Table: avatar (卡通头像库，F3 昵称 + 头像)
+-- --------------------------------------------
+DROP TABLE IF EXISTS `avatar`;
+CREATE TABLE `avatar` (
+    `id`          BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `oss_url`     VARCHAR(512) NOT NULL COMMENT '头像OSS地址',
+    `sort`        INT          DEFAULT 0 COMMENT '展示排序',
+    `create_time` DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `deleted`     TINYINT      DEFAULT 0 COMMENT '逻辑删除：0未删除，1已删除',
+    PRIMARY KEY (`id`),
+    KEY `idx_sort` (`sort`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='卡通头像库';

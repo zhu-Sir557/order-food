@@ -45,7 +45,43 @@ public enum ResultCode {
     RATE_LIMIT_IP_DAILY(429, "当前网络发送过于频繁，请稍后再试"),
 
     /** 验证码错误次数过多，被锁定 */
-    RATE_LIMIT_LOCKED(429, "验证码错误次数过多，请 10 分钟后再试");
+    RATE_LIMIT_LOCKED(429, "验证码错误次数过多，请 10 分钟后再试"),
+
+    /** 今日验证码发送总量达上限（全站合计） */
+    RATE_LIMIT_GLOBAL_DAILY(429, "今日验证码发送总量已达上限，请明天再试"),
+
+    /** 账号/网络被登录失败锁定 */
+    LOGIN_LOCKED(429, "账号或网络被锁定，请稍后再试"),
+
+    /** 手机号已被其他账号注册 */
+    PHONE_ALREADY_REGISTERED(400, "该手机号已被注册"),
+
+    /** 已绑定手机，不支持改绑 */
+    PHONE_ALREADY_BOUND(400, "已绑定手机，不支持改绑"),
+
+    /** 已设置密码 */
+    PASSWORD_ALREADY_SET(400, "已设置密码"),
+
+    /** 尚未设置密码（手机号+密码登录时） */
+    PASSWORD_NOT_SET(400, "尚未设置密码，请先设置密码"),
+
+    /** 账号未绑定手机号，无法用验证码登录 */
+    ACCOUNT_NO_PHONE(400, "账号未绑定手机号，请先绑定手机"),
+
+    /** 账号不存在 */
+    ACCOUNT_NOT_FOUND(400, "账号不存在"),
+
+    /** 昵称超长 */
+    NICK_TOO_LONG(400, "昵称不能超过20个字符"),
+
+    /** 今日昵称修改次数达上限 */
+    NICK_CHANGE_LIMIT(429, "今日昵称修改次数已达上限"),
+
+    /** 今日头像修改次数达上限 */
+    AVATAR_CHANGE_LIMIT(429, "今日头像修改次数已达上限"),
+
+    /** 头像不存在 */
+    AVATAR_NOT_FOUND(400, "头像不存在");
 
     private final int code;
     private final String message;

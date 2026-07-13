@@ -63,6 +63,53 @@ export interface MemberInfo {
   username: string
   balance: number
   createTime: string
+  nickname?: string
+  avatar?: string
+}
+
+/** 头像选项 */
+export interface AvatarVO {
+  id: number
+  ossUrl: string
+}
+
+/** 统一登录请求（四种组合） */
+export type LoginType = 'ACCOUNT_PASSWORD' | 'PHONE_CODE' | 'PHONE_PASSWORD' | 'ACCOUNT_CODE'
+
+export interface UnifiedLoginData {
+  loginType: LoginType
+  account: string
+  password?: string
+  code?: string
+  captchaToken: string
+}
+
+/** 绑定手机请求 */
+export interface BindPhoneData {
+  phone: string
+  code: string
+  captchaToken: string
+}
+
+/** 设置密码请求 */
+export interface SetPasswordData {
+  password: string
+  captchaToken: string
+}
+
+/** 修改昵称请求 */
+export interface UpdateNicknameData {
+  nickname: string
+}
+
+/** 修改头像请求 */
+export interface UpdateAvatarData {
+  avatarId: number
+}
+
+/** 修改次数回执 */
+export interface ChangeLimitVO {
+  remaining: number
 }
 
 /** 余额变动记录 */

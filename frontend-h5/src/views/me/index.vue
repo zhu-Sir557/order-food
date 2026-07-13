@@ -5,10 +5,11 @@
     <!-- 用户信息卡片 -->
     <div class="user-card">
       <div class="avatar">
-        <van-icon name="user-circle-o" size="60" color="#fff" />
+        <img v-if="memberStore.avatar" :src="memberStore.avatar" class="avatar-img" alt="头像" />
+        <van-icon v-else name="user-circle-o" size="60" color="#fff" />
       </div>
       <div class="user-info" v-if="memberStore.isLoggedIn">
-        <div class="user-name">{{ memberStore.username }}</div>
+        <div class="user-name">{{ memberStore.displayName }}</div>
         <div class="user-desc">余额: ¥{{ memberStore.balance.toFixed(2) }}</div>
       </div>
       <div class="user-info" v-else>
@@ -16,6 +17,20 @@
         <div class="user-desc">欢迎光临</div>
       </div>
     </div>
+
+    <!-- 会员资料菜单（登录后可见） -->
+    <van-cell-group inset class="menu-group" v-if="memberStore.isLoggedIn">
+      <van-cell title="更换头像" icon="smile-o" is-link @click="router.push('/avatar')" />
+      <van-cell
+        title="修改昵称"
+        icon="edit"
+        is-link
+        :value="memberStore.nickname || ''"
+        @click="showNickPopup = true"
+      />
+      <van-cell title="绑定手机" icon="phone-o" is-link @click="router.push('/bind-phone')" />
+      <van-cell title="设置密码" icon="lock" is-link @click="router.push('/set-password')" />
+    </van-cell-group>
 
     <!-- 会员功能菜单 -->
     <van-cell-group inset class="menu-group" v-if="memberStore.isLoggedIn">
@@ -44,18 +59,28 @@
       <van-cell title="关于我们" icon="info-o" />
       <van-cell title="联系商家" icon="phone-o" />
     </van-cell-group>
+
+    <!-- 昵称编辑弹窗 -->
+    <EditNicknamePopup
+      v-model:show="showNickPopup"
+      :current-nickname="memberStore.nickname"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import router from '@/router'
 import { showToast } from 'vant'
 import { useUserStore } from '@/store/modules/user'
 import { useMemberStore } from '@/store/modules/member'
+import EditNicknamePopup from '@/components/EditNicknamePopup.vue'
 
 const userStore = useUserStore()
 const memberStore = useMemberStore()
+
+/** 昵称编辑弹窗显隐 */
+const showNickPopup = ref(false)
 
 /** 退出登录 */
 const handleLogout = async (): Promise<void> => {
@@ -66,7 +91,7 @@ const handleLogout = async (): Promise<void> => {
 }
 
 onMounted(() => {
-  // 刷新会员信息
+  // 刷新会员信息（含昵称/头像）
   if (memberStore.isLoggedIn) {
     memberStore.refreshInfo()
   }
@@ -98,6 +123,13 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   border: 2px solid rgba(255, 255, 255, 0.3);
+  overflow: hidden;
+}
+
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .user-info {

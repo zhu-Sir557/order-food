@@ -10,6 +10,8 @@ import com.restaurant.config.AliyunDypnsapiProperties;
 import com.restaurant.config.SmsRateLimitProperties;
 import com.restaurant.dto.SmsSendRequest;
 import com.restaurant.service.CaptchaService;
+import com.restaurant.service.LoginDefenseService;
+import com.restaurant.service.MemberProfileService;
 import com.restaurant.service.SmsCodeStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -50,6 +52,8 @@ class SmsAuthServiceImplBugfixRegressionTest {
     @Mock SmsRateLimiter rateLimiter;
     @Mock Client dypnsapiClient;
     @Mock CaptchaService captchaService;
+    @Mock MemberProfileService memberProfileService;
+    @Mock LoginDefenseService loginDefenseService;
 
     SmsRateLimitProperties rateLimitProps = new SmsRateLimitProperties();
     AliyunDypnsapiProperties dypnsapiProperties = new AliyunDypnsapiProperties();
@@ -61,7 +65,8 @@ class SmsAuthServiceImplBugfixRegressionTest {
         dypnsapiProperties.setSignName("测试签名");
         dypnsapiProperties.setTemplateCode("SMS_TEST");
         service = new SmsAuthServiceImpl(smsCodeStore, rateLimiter, dypnsapiClient,
-                null, null, rateLimitProps, dypnsapiProperties, captchaService);
+                null, null, rateLimitProps, dypnsapiProperties, captchaService,
+                memberProfileService, loginDefenseService);
     }
 
     private SmsSendRequest sendReq(String phone, String token) {
@@ -74,6 +79,8 @@ class SmsAuthServiceImplBugfixRegressionTest {
     private SendSmsVerifyCodeResponse buildResponse(String code) {
         SendSmsVerifyCodeResponse response = new SendSmsVerifyCodeResponse();
         SendSmsVerifyCodeResponseBody body = new SendSmsVerifyCodeResponseBody();
+        // 成功判定：body.code=OK 表示短信已下发
+        body.setCode("OK");
         SendSmsVerifyCodeResponseBody.SendSmsVerifyCodeResponseBodyModel model =
                 new SendSmsVerifyCodeResponseBody.SendSmsVerifyCodeResponseBodyModel();
         model.setVerifyCode(code);
@@ -174,7 +181,10 @@ class SmsAuthServiceImplBugfixRegressionTest {
     void aliyun_nullVerifyCode_throwsSmsSendFailed() throws Exception {
         when(captchaService.verifyAndConsumeCaptcha("tok")).thenReturn(true);
         when(rateLimiter.canSend(anyString(), anyString())).thenReturn(RateLimitResult.ok());
-        when(dypnsapiClient.sendSmsVerifyCode(any())).thenReturn(buildResponse(null));
+        // 模拟阿里云返回非 OK（如业务限流），应统一映射为 SMS_SEND_FAILED
+        SendSmsVerifyCodeResponse errResp = buildResponse(null);
+        errResp.getBody().setCode("isp.INVALID_PARAMETERS");
+        when(dypnsapiClient.sendSmsVerifyCode(any())).thenReturn(errResp);
 
         BizException ex = assertThrows(BizException.class,
                 () -> service.sendCode(sendReq("13800001111", "tok"), "1.2.3.4"));

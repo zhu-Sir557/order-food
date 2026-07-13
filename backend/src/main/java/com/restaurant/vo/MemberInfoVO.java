@@ -20,4 +20,10 @@ public class MemberInfoVO {
 
     /** 注册时间 */
     private String createTime;
+
+    /** 昵称 */
+    private String nickname;
+
+    /** 头像OSS地址 */
+    private String avatar;
 }
