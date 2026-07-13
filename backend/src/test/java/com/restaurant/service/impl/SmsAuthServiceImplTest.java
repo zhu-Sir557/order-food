@@ -31,6 +31,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -165,11 +166,14 @@ class SmsAuthServiceImplTest {
     }
 
     @Test
-    @DisplayName("sendCode: 滑块通过且不限频 → 调阿里云、存Redis、onSendSuccess，明文不返回")
+    @DisplayName("sendCode: 滑块通过且不限频 → 阿里云code=OK但回传verifyCode为空，存本地code、onSendSuccess")
     void sendCode_success() throws Exception {
         when(captchaService.verifyAndConsumeCaptcha("tok")).thenReturn(true);
         when(rateLimiter.canSend(anyString(), anyString())).thenReturn(RateLimitResult.ok());
-        SendSmsVerifyCodeResponse resp = buildResponse("123456");
+        // 真实场景：阿里云 code=OK（短信已下发），但本账号/SDK 不回传明文 verifyCode（为空），
+        // 用户短信中实际收到的验证码是我们传入 TemplateParam 的本地 code。
+        SendSmsVerifyCodeResponse resp = buildResponse("");
+        resp.getBody().setCode("OK");
         when(dypnsapiClient.sendSmsVerifyCode(any(SendSmsVerifyCodeRequest.class))).thenReturn(resp);
 
         service.sendCode(sendReq("13800001111", "tok"), "1.2.3.4");
@@ -182,8 +186,50 @@ class SmsAuthServiceImplTest {
         assertEquals("测试签名", r.getSignName());
         assertEquals("SMS_TEST", r.getTemplateCode());
         assertTrue(Boolean.TRUE.equals(r.getReturnVerifyCode()));
-        // 明文存入 Redis（mock），且 onSendSuccess 计数
-        verify(smsCodeStore).save(eq("13800001111"), eq("123456"), eq(rateLimitProps.getCodeTtlSeconds()));
+
+        // (a) 模板变量必须同时包含 code 与 min 两个键（用户模板含这两个变量），且取值正确
+        String templateParam = r.getTemplateParam();
+        assertNotNull(templateParam, "TemplateParam 不应为空");
+        cn.hutool.json.JSONObject tpJson = new cn.hutool.json.JSONObject(templateParam);
+        assertTrue(tpJson.containsKey("code"), "TemplateParam 必须包含 code 变量");
+        assertTrue(tpJson.containsKey("min"), "TemplateParam 必须包含 min 变量");
+        // 本地 code 即短信正文携带的验证码，从 TemplateParam 取出用于闭环断言
+        String localCode = tpJson.getStr("code");
+        String reqMin = tpJson.getStr("min");
+        // (c) 本地 code 占位必须为 6 位纯数字
+        assertTrue(localCode.matches("\\d{6}"), "模板 code 应为 6 位纯数字: " + localCode);
+        assertEquals(String.valueOf(rateLimitProps.getCodeTtlSeconds() / 60), reqMin,
+                "模板 min 应为有效分钟数(CodeTtlSeconds/60)");
+
+        // (b) 验证码闭环：阿里云回传 verifyCode 为空，存入 Redis 的 code 必须等于本地 code
+        //     （即用户短信实际收到的码，确保登录比对通过）
+        var savedCodeCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(smsCodeStore).save(eq("13800001111"), savedCodeCaptor.capture(), eq(rateLimitProps.getCodeTtlSeconds()));
+        String savedCode = savedCodeCaptor.getValue();
+        assertEquals(localCode, savedCode,
+                "回传 verifyCode 为空时，存 Redis 的 code 必须等于本地 code（用户短信收到的码）");
+        assertTrue(savedCode.matches("\\d{6}"), "存储的 code 应为 6 位纯数字: " + savedCode);
+
+        verify(rateLimiter).onSendSuccess("13800001111", "1.2.3.4");
+    }
+
+    @Test
+    @DisplayName("sendCode: 阿里云 code=OK 且回传 verifyCode 有值 → 优先存回传明文（而非本地code）")
+    void sendCode_success_echoedVerifyCode() throws Exception {
+        when(captchaService.verifyAndConsumeCaptcha("tok")).thenReturn(true);
+        when(rateLimiter.canSend(anyString(), anyString())).thenReturn(RateLimitResult.ok());
+        // 假设某账号/SDK 确实回传明文验证码，则应优先采用回传值（新逻辑分支②）
+        SendSmsVerifyCodeResponse resp = buildResponse("654321");
+        resp.getBody().setCode("OK");
+        when(dypnsapiClient.sendSmsVerifyCode(any(SendSmsVerifyCodeRequest.class))).thenReturn(resp);
+
+        service.sendCode(sendReq("13800001111", "tok"), "1.2.3.4");
+
+        var savedCodeCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(smsCodeStore).save(eq("13800001111"), savedCodeCaptor.capture(), eq(rateLimitProps.getCodeTtlSeconds()));
+        assertEquals("654321", savedCodeCaptor.getValue(),
+                "回传 verifyCode 有值时，存 Redis 的 code 应等于阿里云回传明文（优先于本地 code）");
+        assertTrue(savedCodeCaptor.getValue().matches("\\d{6}"));
         verify(rateLimiter).onSendSuccess("13800001111", "1.2.3.4");
     }
 

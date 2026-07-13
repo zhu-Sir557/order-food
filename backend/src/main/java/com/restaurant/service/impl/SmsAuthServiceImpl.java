@@ -18,6 +18,7 @@ import com.restaurant.service.SmsAuthService;
 import com.restaurant.service.SmsCodeStore;
 import com.restaurant.util.JwtUtil;
 import com.restaurant.vo.MemberLoginVO;
+import cn.hutool.core.util.RandomUtil;
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
@@ -86,8 +87,14 @@ public class SmsAuthServiceImpl implements SmsAuthService {
         request.setReturnVerifyCode(true);
         request.setInterval(60L);
         request.setValidTime((long) rateLimitProps.getCodeTtlSeconds());
-        // 模板变量 ${min}（验证码 ${code} 由阿里云自动填充）
-        request.setTemplateParam("{\"min\":\"5\"}");
+
+        // 生成 6 位验证码占位值，并换算有效分钟数（= CodeTtlSeconds / 60）
+        String code = RandomUtil.randomNumbers(6);
+        int validMinutes = rateLimitProps.getCodeTtlSeconds() / 60;
+        // 模板变量：${code} 与 ${min} 用户模板均包含，二者都必须传入，缺一不可；
+        // 用户短信中实际收到的验证码即我们传入的本地 ${code}，故下方以本地 code 作为 Redis 存储值
+        // （仅当阿里云回传的 verifyCode 确有填充时才优先采用它）。
+        request.setTemplateParam("{\"code\":\"" + code + "\",\"min\":\"" + validMinutes + "\"}");
 
         SendSmsVerifyCodeResponse response;
         try {
@@ -99,15 +106,26 @@ public class SmsAuthServiceImpl implements SmsAuthService {
         }
 
         SendSmsVerifyCodeResponseBody body = response.getBody();
-        if (body == null || body.getModel() == null
-                || body.getModel().getVerifyCode() == null || body.getModel().getVerifyCode().isBlank()) {
+        // 成功判定：阿里云返回 code=OK 表示短信已下发；其余值（如 biz.FREQUENCY）为失败。
+        // 注意：本账号/SDK 即便 ReturnVerifyCode=true，响应 model.getVerifyCode() 仍为空白，
+        // 用户短信中实际收到的验证码是我们在 TemplateParam 中传入的本地 code。
+        if (body == null || !"OK".equals(body.getCode())) {
             log.warn("阿里云发送验证码返回异常: phone={}, code={}, msg={}",
                     SmsCodeStore.maskPhone(phone),
                     body == null ? null : body.getCode(),
                     body == null ? null : body.getMessage());
             throw new BizException(ResultCode.SMS_SEND_FAILED, "验证码发送失败，请稍后再试");
         }
-        String verifyCode = body.getModel().getVerifyCode();
+
+        // 验证码取值：优先采用阿里云回传的 verifyCode（若其确有填充），否则回退到本地 code
+        // （即短信正文携带的验证码，保证登录时用户凭短信收到的码能比对通过）。
+        String verifyCode = (body.getModel() != null && body.getModel().getVerifyCode() != null
+                && !body.getModel().getVerifyCode().isBlank())
+                ? body.getModel().getVerifyCode()
+                : code;
+        log.info("短信验证码已生成: phone={}, 本地code={}, 阿里云回传verifyCode={}",
+                SmsCodeStore.maskPhone(phone), code,
+                (body.getModel() != null ? body.getModel().getVerifyCode() : "<null>"));
 
         // ⑥ 存 Redis + 更新限频计数
         smsCodeStore.save(phone, verifyCode, rateLimitProps.getCodeTtlSeconds());
