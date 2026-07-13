@@ -1,6 +1,6 @@
 [Unit]
 Description=Order Food Backend Service
-After=network.target mysqld.service
+After=network.target mysqld.service redis.service
 
 [Service]
 Type=simple

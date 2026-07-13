@@ -174,6 +174,38 @@ setup_database() {
 }
 
 # ============================================================
+# 安装 Redis 6.0+（后端强依赖：滑块验证码 / 短信限流 / 缓存）
+# ============================================================
+install_redis() {
+    step "安装 Redis 6.0+"
+
+    if command -v redis-cli &>/dev/null && redis-cli --version 2>/dev/null | grep -qE "redis-cli [6-9]\.|redis-cli [0-9]{2}\."; then
+        info "Redis 6.0+ 已安装，跳过"
+    else
+        info "通过 dnf 安装 Redis..."
+        if dnf install -y redis 2>/dev/null; then
+            info "Redis 安装成功"
+        else
+            error "Redis 安装失败，请手动安装 redis 6.0+ 后重新执行"
+            exit 1
+        fi
+    fi
+
+    systemctl enable redis
+    systemctl start redis
+
+    info "等待 Redis 就绪..."
+    for i in $(seq 1 10); do
+        if redis-cli ping 2>/dev/null | grep -q PONG; then
+            info "Redis 已就绪"
+            break
+        fi
+        sleep 1
+    done
+    redis-cli ping
+}
+
+# ============================================================
 # 步骤 4/8：安装 Nginx
 # ============================================================
 install_nginx() {
@@ -399,6 +431,7 @@ main() {
     install_jdk
     install_mysql
     setup_database
+    install_redis
     install_nginx
     deploy_files
     setup_nginx
