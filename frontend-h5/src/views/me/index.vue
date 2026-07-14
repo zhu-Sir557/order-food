@@ -4,7 +4,7 @@
 
     <!-- 用户信息卡片 -->
     <div class="user-card">
-      <div class="avatar" @click="triggerAvatarUpload">
+      <div class="avatar" @click="showAvatarSheet = true">
         <img v-if="memberStore.avatar" :src="memberStore.avatar" class="avatar-img" alt="头像" />
         <van-icon v-else name="user-circle-o" size="60" color="#fff" />
         <div class="avatar-edit" v-if="!uploading">
@@ -34,7 +34,20 @@
 
     <!-- 会员资料菜单（登录后可见） -->
     <van-cell-group inset class="menu-group" v-if="memberStore.isLoggedIn">
-      <van-cell title="绑定手机" icon="phone-o" is-link @click="router.push('/bind-phone')" />
+      <van-cell
+        v-if="!memberStore.isPhoneBound"
+        title="绑定手机"
+        icon="phone-o"
+        is-link
+        @click="router.push('/bind-phone')"
+      />
+      <van-cell
+        v-else
+        title="查看绑定手机号"
+        icon="phone-o"
+        is-link
+        @click="showPhoneDialog = true"
+      />
       <van-cell title="设置密码" icon="lock" is-link @click="router.push('/set-password')" />
     </van-cell-group>
 
@@ -71,13 +84,27 @@
       v-model:show="showNickPopup"
       :current-nickname="memberStore.nickname"
     />
+
+    <!-- 头像操作动作面板 -->
+    <van-action-sheet
+      v-model:show="showAvatarSheet"
+      :actions="avatarActions"
+      cancel-text="取消"
+      description="头像操作"
+      @select="onAvatarAction"
+    />
+
+    <!-- 查看绑定手机号弹窗 -->
+    <van-dialog v-model:show="showPhoneDialog" title="绑定手机号">
+      <div class="phone-dialog-content">您的手机号：{{ memberStore.phoneMasked }}</div>
+    </van-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import router from '@/router'
-import { showToast } from 'vant'
+import { showToast, showImagePreview } from 'vant'
 import { useUserStore } from '@/store/modules/user'
 import { useMemberStore } from '@/store/modules/member'
 import EditNicknamePopup from '@/components/EditNicknamePopup.vue'
@@ -88,6 +115,18 @@ const memberStore = useMemberStore()
 /** 昵称编辑弹窗显隐 */
 const showNickPopup = ref(false)
 
+/** 头像操作动作面板显隐 */
+const showAvatarSheet = ref(false)
+
+/** 查看绑定手机号弹窗显隐 */
+const showPhoneDialog = ref(false)
+
+/** 头像动作面板选项 */
+const avatarActions: { name: string }[] = [
+  { name: '查看头像' },
+  { name: '更换头像' },
+]
+
 /** 头像上传 */
 const fileInput = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
@@ -95,6 +134,20 @@ const uploading = ref(false)
 /** 触发隐藏文件选择 */
 const triggerAvatarUpload = (): void => {
   fileInput.value?.click()
+}
+
+/** 头像动作面板选择回调 */
+const onAvatarAction = (action: { name?: string }): void => {
+  const name = action.name ?? ''
+  if (name === '查看头像') {
+    if (!memberStore.avatar) {
+      showToast('尚未设置头像')
+      return
+    }
+    showImagePreview([memberStore.avatar])
+  } else if (name === '更换头像') {
+    triggerAvatarUpload()
+  }
 }
 
 /** 选择图片后上传头像 */
@@ -124,7 +177,7 @@ const handleLogout = async (): Promise<void> => {
 }
 
 onMounted(() => {
-  // 刷新会员信息（含昵称/头像）
+  // 刷新会员信息（含昵称/头像/脱敏手机号）
   if (memberStore.isLoggedIn) {
     memberStore.refreshInfo()
   }
@@ -221,5 +274,12 @@ onMounted(() => {
   margin-top: 12px;
   box-shadow: var(--shadow-sm);
   border-radius: var(--radius-card);
+}
+
+.phone-dialog-content {
+  padding: 20px 16px;
+  text-align: center;
+  font-size: var(--font-size-body);
+  color: var(--color-text-primary);
 }
 </style>

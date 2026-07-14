@@ -26,4 +26,7 @@ public class MemberInfoVO {
 
     /** 头像OSS地址 */
     private String avatar;
+
+    /** 脱敏后的绑定手机号（未绑定则为 null） */
+    private String phoneMasked;
 }

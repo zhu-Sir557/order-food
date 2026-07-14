@@ -19,6 +19,8 @@ interface MemberState {
   balance: number
   nickname: string
   avatar: string
+  /** 脱敏后的绑定手机号（空串表示未绑定） */
+  phoneMasked: string
   /** 今日昵称剩余可修改次数（null 表示尚未获知，按默认上限展示） */
   nickRemaining: number | null
   /** 今日头像剩余可修改次数 */
@@ -36,6 +38,7 @@ export const useMemberStore = defineStore('member', {
     balance: localStorage.getItem('memberBalance') ? Number(localStorage.getItem('memberBalance')) : 0,
     nickname: localStorage.getItem('memberNickname') || '',
     avatar: localStorage.getItem('memberAvatar') || '',
+    phoneMasked: localStorage.getItem('memberPhoneMasked') || '',
     nickRemaining: null,
     avatarRemaining: null,
   }),
@@ -44,6 +47,8 @@ export const useMemberStore = defineStore('member', {
     isLoggedIn: (state): boolean => !!state.memberId,
     /** 展示名：昵称优先，否则用户名 */
     displayName: (state): string => state.nickname || state.username || '食客',
+    /** 是否已绑定手机号（后端只返回脱敏手机号，空串表示未绑定） */
+    isPhoneBound: (state): boolean => !!state.phoneMasked,
   },
   actions: {
     /**
@@ -118,7 +123,7 @@ export const useMemberStore = defineStore('member', {
     },
 
     /**
-     * 刷新会员信息（从服务端获取最新余额/昵称/头像）
+     * 刷新会员信息（从服务端获取最新余额/昵称/头像/脱敏手机号）
      */
     async refreshInfo(): Promise<void> {
       if (!this.memberId) return
@@ -132,6 +137,10 @@ export const useMemberStore = defineStore('member', {
         if (info.avatar) {
           this.avatar = info.avatar
           localStorage.setItem('memberAvatar', info.avatar)
+        }
+        if (info.phoneMasked) {
+          this.phoneMasked = info.phoneMasked
+          localStorage.setItem('memberPhoneMasked', info.phoneMasked)
         }
       } catch (error) {
         console.error('刷新会员信息失败:', error)
@@ -175,6 +184,7 @@ export const useMemberStore = defineStore('member', {
       this.balance = 0
       this.nickname = ''
       this.avatar = ''
+      this.phoneMasked = ''
       this.nickRemaining = null
       this.avatarRemaining = null
       localStorage.removeItem('memberId')
@@ -182,6 +192,7 @@ export const useMemberStore = defineStore('member', {
       localStorage.removeItem('memberBalance')
       localStorage.removeItem('memberNickname')
       localStorage.removeItem('memberAvatar')
+      localStorage.removeItem('memberPhoneMasked')
     },
   },
 })

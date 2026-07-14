@@ -65,6 +65,8 @@ export interface MemberInfo {
   createTime: string
   nickname?: string
   avatar?: string
+  /** 脱敏后的绑定手机号（未绑定则不返回该字段） */
+  phoneMasked?: string
 }
 
 /** 统一登录请求（两种组合） */

@@ -10,6 +10,7 @@ import com.restaurant.mapper.MemberMapper;
 import com.restaurant.service.BalanceRecordService;
 import com.restaurant.service.MemberService;
 import com.restaurant.service.RechargeCardService;
+import com.restaurant.service.SmsCodeStore;
 import com.restaurant.vo.BalanceRecordVO;
 import com.restaurant.vo.MemberInfoVO;
 import java.math.BigDecimal;
@@ -46,6 +47,10 @@ public class MemberServiceImpl implements MemberService {
         vo.setBalance(member.getBalance());
         vo.setNickname(member.getNickname());
         vo.setAvatar(member.getAvatar());
+        // 仅当已绑定手机号时下发脱敏号码（明文手机号绝不返回前端）
+        if (member.getPhone() != null) {
+            vo.setPhoneMasked(SmsCodeStore.maskPhone(member.getPhone()));
+        }
         if (member.getCreateTime() != null) {
             vo.setCreateTime(member.getCreateTime().format(FMT));
         }
