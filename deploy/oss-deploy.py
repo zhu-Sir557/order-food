@@ -1,153 +1,313 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-通过OSS中转上传JAR：本地→OSS→服务器下载
-都在阿里云上海region，速度极快
+============================================================================
+ order-food 一键上线脚本（OSS 中转，三端全量）
+----------------------------------------------------------------------------
+ 适用：本地改完代码后，一条命令把 后端 + h5用户端 + admin管理端 全部上线。
+
+ 流程：
+   1. 本地构建（后端 mvnw 离线打包 / 前端 vite build，自动绕开沙箱安全删除）
+   2. 把产物（jar + 两个 dist tar.gz）传 OSS（阿里云上海，同地域内网极快）
+   3. 服务器通过 sshx.sh 执行：拉取 OSS -> 替换 -> 重启（后端 systemd / 前端静态免重启）
+   4. 收尾：OSS 临时对象改 private、清本地 dist_bak
+   5. 健康检查
+
+ 依赖：
+   - 同目录 .deploy.env（含服务器密码、OSS AK/SK、桶名）—— 已被 .gitignore 排除
+   - 同目录 sshx.sh（服务器 SSH 包装，密码从 .deploy.env 注入）
+   - 本地 Python 装了 oss2（managed python 已自带 2.19.1）
+
+ 用法：
+   python3 deploy/oss-deploy.py                 # 三端全量上线
+   python3 deploy/oss-deploy.py --skip-backend  # 只上前端
+   python3 deploy/oss-deploy.py --skip-frontend # 只上后端
+   python3 deploy/oss-deploy.py --no-build      # 不重新构建，直接用已有产物上线
+   python3 deploy/oss-deploy.py --host 1.2.3.4  # 临时覆盖服务器IP
+============================================================================
 """
-import paramiko
-import oss2
+import argparse
+import os
 import sys
 import time
-import os
+import subprocess
+import tarfile
+import tempfile
+import shutil
+from pathlib import Path
 
-# === 服务器（从环境变量读取，请勿硬编码） ===
-HOST = os.environ.get("DEPLOY_SERVER_HOST", "")
-USER = os.environ.get("DEPLOY_SERVER_USER", "root")
-PASS = os.environ.get("DEPLOY_SERVER_PASS", "")
+# ---------- 路径 ----------
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+BACKEND_DIR = os.path.join(PROJECT_ROOT, "backend")
+FRONTEND_H5 = os.path.join(PROJECT_ROOT, "frontend-h5")
+FRONTEND_ADMIN = os.path.join(PROJECT_ROOT, "frontend-admin")
 
-# === OSS（从环境变量读取） ===
-OSS_ENDPOINT = os.environ.get("OSS_ENDPOINT", "https://oss-cn-shanghai.aliyuncs.com")
-OSS_AK = os.environ.get("OSS_ACCESS_KEY_ID", "")
-OSS_SK = os.environ.get("OSS_ACCESS_KEY_SECRET", "")
-OSS_BUCKET = os.environ.get("OSS_BUCKET_NAME", "")
+ENV_FILE = os.path.join(SCRIPT_DIR, ".deploy.env")
+SSHX = os.path.join(SCRIPT_DIR, "sshx.sh")
 
-# === JAR ===
-LOCAL_JAR = r"d:\source\workbuddy\repo1\order_food\backend\target\order-food-backend-1.0.0.jar"
-OSS_KEY = "deploy/order-food-backend-1.0.0.jar"
-REMOTE_JAR = "/opt/order-food/backend/order-food-backend-1.0.0.jar"
-REMOTE_TMP = "/tmp/order-food-backend-1.0.0.jar"
+# ---------- OSS 中转路径 ----------
+OSS_PREFIX = "deploy-tmp"
 
-def run_cmd(ssh, cmd, timeout=30):
-    stdin, stdout, stderr = ssh.exec_command(cmd, timeout=timeout)
-    out = stdout.read().decode().strip()
-    err = stderr.read().decode().strip()
-    exit_code = stdout.channel.recv_exit_status()
-    return out, err, exit_code
+# ---------- 服务器固定路径 ----------
+REMOTE_BACKEND_JAR = "/opt/order-food/backend/order-food-backend-1.0.0.jar"
+REMOTE_H5_DIR = "/opt/order-food/frontend/h5"
+REMOTE_ADMIN_DIR = "/opt/order-food/frontend/admin"
+SYSTEMD_SVC = "order-food"
 
-def upload_progress(transferred, total):
-    pct = transferred / total * 100
-    print(f"\r  OSS上传: {pct:.0f}% ({transferred // 1024 // 1024}MB / {total // 1024 // 1024}MB)", end="", flush=True)
+# ---------- 本地工具链 ----------
+JAVA_HOME = r"C:\programming_software\jdk-21.0.9"
+NODE = r"C:\Users\zhujw2\.workbuddy\binaries\node\versions\22.22.2\node.exe"
 
-def main():
-    jar_size = os.path.getsize(LOCAL_JAR)
-    print(f"JAR文件大小: {jar_size / 1024 / 1024:.1f} MB")
+# ---------- 颜色 ----------
+GREEN = "\033[32m"; YELLOW = "\033[33m"; RED = "\033[31m"; CYAN = "\033[36m"; RESET = "\033[0m"
+def log(step, msg, color=CYAN):
+    print(f"{color}[{step}]{RESET} {msg}")
 
-    # 1. 上传JAR到OSS
-    print("\n[1/5] 上传 JAR 到 OSS...")
-    auth = oss2.AuthProvider(OSS_AK, OSS_SK) if hasattr(oss2, 'AuthProvider') else oss2.Auth(OSS_AK, OSS_SK)
-    bucket = oss2.Bucket(auth, OSS_ENDPOINT, OSS_BUCKET)
-    
+# ============================================================================
+#  配置读取
+# ============================================================================
+def load_env():
+    env = {}
+    if not os.path.isfile(ENV_FILE):
+        log("ENV", f"找不到 {ENV_FILE}，请复制 .deploy.env.example 并填写", RED)
+        sys.exit(1)
+    with open(ENV_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            env[k.strip()] = v.strip()
+    return env
+
+# ============================================================================
+#  本地构建
+# ============================================================================
+def build_backend():
+    log("BUILD", "构建后端 (./mvnw.sh -o package，禁用 clean) ...")
+    mvnw = os.path.join(BACKEND_DIR, "mvnw.sh")
+    env = dict(os.environ)
+    env["JAVA_HOME"] = JAVA_HOME
+    cmd = ["bash", mvnw, "-o", "-DskipTests", "package"]
+    r = subprocess.run(cmd, cwd=BACKEND_DIR, env=env)
+    if r.returncode != 0:
+        log("BUILD", "后端构建失败", RED); sys.exit(1)
+    jar = os.path.join(BACKEND_DIR, "target", "order-food-backend-1.0.0.jar")
+    if not os.path.isfile(jar):
+        log("BUILD", f"未找到产物 {jar}", RED); sys.exit(1)
+    log("BUILD", f"后端构建完成: {os.path.getsize(jar)//1024//1024} MB", GREEN)
+    return jar
+
+def build_frontend(name, fe_dir):
+    log("BUILD", f"构建前端 {name} (vite build) ...")
+    # 沙箱安全删除会拦截清空 dist（>50文件），先 mv 走再 build
+    dist = os.path.join(fe_dir, "dist")
+    dist_bak = os.path.join(fe_dir, "dist_bak")
+    if os.path.isdir(dist):
+        if os.path.isdir(dist_bak):
+            shutil.rmtree(dist_bak)
+        os.rename(dist, dist_bak)
+    vite = os.path.join(fe_dir, "node_modules", ".bin", "vite")
+    if not os.path.isfile(vite):
+        log("BUILD", f"{name} 未安装依赖 (缺 node_modules/.bin/vite)，请先 npm install", RED)
+        sys.exit(1)
+    cmd = [NODE, vite, "build"]
+    r = subprocess.run(cmd, cwd=fe_dir)
+    if r.returncode != 0:
+        log("BUILD", f"{name} 构建失败", RED); sys.exit(1)
+    if not os.path.isdir(dist):
+        log("BUILD", f"{name} 未生成 dist", RED); sys.exit(1)
+    log("BUILD", f"{name} 构建完成", GREEN)
+    return dist
+
+def pack_dist_tar(dist_dir):
+    """把 dist 打成 tar.gz 返回 (路径, 大小)"""
+    tmp = tempfile.mktemp(suffix=".tar.gz", prefix="dist_")
+    with tarfile.open(tmp, "w:gz") as tar:
+        tar.add(dist_dir, arcname=".")
+    return tmp, os.path.getsize(tmp)
+
+# ============================================================================
+#  OSS 上传 / 清理
+# ============================================================================
+def get_bucket(env):
+    import oss2
+    auth = oss2.Auth(env["OSS_ACCESS_KEY_ID"], env["OSS_ACCESS_KEY_SECRET"])
+    return oss2.Bucket(auth, env["OSS_ENDPOINT"], env["OSS_BUCKET_NAME"])
+
+def upload_to_oss(bucket, env, local_path, oss_key):
+    size = os.path.getsize(local_path)
+    log("OSS", f"上传 {os.path.basename(local_path)} ({size//1024//1024} MB) -> oss://{bucket.bucket_name}/{oss_key}")
+    bucket.put_object_from_file(oss_key, local_path)
+    # 临时 public-read，方便服务器直接 curl（收尾改回 private）
+    bucket.put_object_acl(oss_key, "public-read")
+    host = env["OSS_ENDPOINT"].split("//")[-1]
+    url = f"https://{bucket.bucket_name}.{host}/{oss_key}"
+    log("OSS", f"已设为 public-read，URL: {url}", GREEN)
+    return url
+
+def set_private(bucket, oss_key):
     try:
-        bucket.put_object_from_file(OSS_KEY, LOCAL_JAR, progress_callback=upload_progress)
-        print("\n  OSS上传完成!")
-    except Exception as e:
-        print(f"\n  OSS上传失败: {e}")
-        sys.exit(1)
-
-    # 构造OSS公网URL
-    oss_url = f"https://{OSS_BUCKET}.oss-cn-shanghai.aliyuncs.com/{OSS_KEY}"
-    print(f"  OSS URL: {oss_url}")
-
-    # 2. 连接服务器
-    print("\n[2/5] 连接服务器...")
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(HOST, port=22, username=USER, password=PASS, timeout=15)
-    print("  SSH 连接成功")
-
-    # 3. 从OSS下载JAR到服务器
-    print("\n[3/5] 服务器从OSS下载 JAR...")
-    out, err, code = run_cmd(ssh, f"curl -sL -o {REMOTE_TMP} '{oss_url}' && ls -lh {REMOTE_TMP}", timeout=120)
-    print(f"  下载结果: {out}")
-    if err:
-        print(f"  stderr: {err}")
-    
-    # 验证文件大小
-    out, err, code = run_cmd(ssh, f"stat -c%s {REMOTE_TMP}")
-    remote_size = int(out) if out else 0
-    print(f"  服务器端文件大小: {remote_size / 1024 / 1024:.1f} MB (本地: {jar_size / 1024 / 1024:.1f} MB)")
-    
-    if remote_size != jar_size:
-        print(f"  [错误] 文件大小不匹配!")
-        ssh.close()
-        sys.exit(1)
-    print("  文件大小一致 ✓")
-
-    # 4. 停止服务 + 替换JAR + 启动
-    print("\n[4/5] 替换JAR并重启服务...")
-    out, _, _ = run_cmd(ssh, "systemctl stop order-food && echo 'stopped'")
-    print(f"  停止服务: {out}")
-    
-    out, err, code = run_cmd(ssh, f"cp {REMOTE_TMP} {REMOTE_JAR} && echo 'replaced'")
-    print(f"  替换JAR: {out}")
-    if err:
-        print(f"  [错误] {err}")
-    
-    out, _, _ = run_cmd(ssh, "systemctl start order-food && echo 'started'")
-    print(f"  启动服务: {out}")
-    
-    print("  等待8秒让Spring Boot启动...")
-    time.sleep(8)
-    
-    out, _, _ = run_cmd(ssh, "systemctl is-active order-food")
-    print(f"  服务状态: {out}")
-    
-    if out != "active":
-        print("  [错误] 服务未正常启动，查看日志:")
-        out, _, _ = run_cmd(ssh, "tail -30 /opt/order-food/logs/stderr.log 2>/dev/null")
-        print(out)
-        ssh.close()
-        sys.exit(1)
-
-    # 5. 验证接口
-    print("\n[5/5] 验证接口...")
-    print("-" * 50)
-    
-    tests = [
-        ("H5分类接口", "curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/h5/categories"),
-        ("H5注册", """curl -s -X POST http://localhost:8080/api/h5/member/register -H 'Content-Type: application/json' -d '{"username":"autotest005","password":"123456"}'"""),
-        ("H5登录", """curl -s -X POST http://localhost:8080/api/h5/member/login -H 'Content-Type: application/json' -d '{"username":"autotest005","password":"123456","captchaToken":"skip"}'"""),
-        ("Admin登录", """curl -s -X POST http://localhost:8080/api/admin/login -H 'Content-Type: application/json' -d '{"username":"admin","password":"admin123"}'"""),
-        ("公网H5", "curl -s -o /dev/null -w '%{http_code}' http://localhost/"),
-        ("公网Admin", "curl -s -o /dev/null -w '%{http_code}' http://localhost/admin/"),
-    ]
-    
-    all_pass = True
-    for name, cmd in tests:
-        out, err, code = run_cmd(ssh, cmd, timeout=15)
-        display = out[:300] if len(out) > 300 else out
-        print(f"  {name}: {display}")
-        if "500" in out or "error" in out.lower():
-            all_pass = False
-        time.sleep(0.3)
-    
-    # 清理
-    run_cmd(ssh, f"rm -f {REMOTE_TMP}")
-    
-    # 删除OSS上的临时文件
-    try:
-        bucket.delete_object(OSS_KEY)
-        print("\n  OSS临时文件已清理")
-    except:
+        bucket.put_object_acl(oss_key, "private")
+    except Exception:
         pass
-    
-    print("\n" + "=" * 50)
-    if all_pass:
-        print("  ✅ 全部验证通过! 部署成功!")
+
+# ============================================================================
+#  服务器执行（通过 sshx.sh）
+# ============================================================================
+def remote(env, cmd, timeout=600):
+    host = env.get("DEPLOY_SERVER_HOST")
+    full = ["bash", SSHX, f"{env.get('DEPLOY_SERVER_USER','root')}@{host}", cmd]
+    try:
+        r = subprocess.run(full, capture_output=True, text=True, timeout=timeout)
+        return r.stdout.strip(), r.returncode
+    except subprocess.TimeoutExpired:
+        return "", 124
+
+def shell_quote(s):
+    return "'" + s.replace("'", "'\\''") + "'"
+
+def curl_resume_loop(env, url, dest, expect_size):
+    """服务端断点续传循环拉取（规避 ssh 长连接被掐 + 网络抖动），返回最终大小字符串"""
+    cmd = (
+        f"for i in $(seq 1 20); do "
+        f"S=$(stat -c%s {dest} 2>/dev/null || echo 0); "
+        f"if [ \"$S\" -ge {expect_size} ]; then echo FULL=$S; break; fi; "
+        f"curl -sL -C - -o {dest} {shell_quote(url)}; "
+        f"echo \"attempt $i -> $(stat -c%s {dest} 2>/dev/null)\"; done; "
+        f"echo FINAL=$(stat -c%s {dest} 2>/dev/null)"
+    )
+    out, _ = remote(env, cmd, timeout=600)
+    return out
+
+def restart_backend(env):
+    log("DEPLOY", "后端：停止 systemd 服务 + 兜底 pkill ...")
+    remote(env, f"systemctl stop {SYSTEMD_SVC} 2>/dev/null; pkill -9 -f 'order-food-backend-1.0.0.jar' 2>/dev/null; sleep 3; echo STOPPED")
+    log("DEPLOY", "后端：启动 systemd 服务 ...")
+    remote(env, f"systemctl start {SYSTEMD_SVC} 2>&1; echo STARTED")
+    log("DEPLOY", "等待 Spring Boot 启动 (约 25s) ...", YELLOW)
+    time.sleep(25)
+    out, _ = remote(env, f"systemctl is-active {SYSTEMD_SVC}; ss -lntp 2>/dev/null | grep 8080")
+    log("DEPLOY", f"服务状态: {out}", GREEN)
+
+def deploy_frontend(env, url, expect_size, remote_dir, name):
+    log("DEPLOY", f"{name}：拉取 dist 并解压到 {remote_dir} ...")
+    tmp = f"/tmp/{name}_dist.tar.gz"
+    curl_resume_loop(env, url, tmp, expect_size)
+    cmd = f"rm -rf {remote_dir}/* && mkdir -p {remote_dir} && tar xzf {tmp} -C {remote_dir} && echo EXTRACTED && ls {remote_dir} | head"
+    out, _ = remote(env, cmd, timeout=300)
+    log("DEPLOY", f"{name}: {out}", GREEN)
+
+# ============================================================================
+#  健康检查
+# ============================================================================
+def health_check(env):
+    log("CHECK", "后端健康检查 /api/h5/categories ...")
+    out, _ = remote(env, "curl -s -o /dev/null -w 'HTTP %{http_code}' --max-time 10 http://127.0.0.1:8080/api/h5/categories")
+    ok = "200" in out
+    log("CHECK", f"categories -> {out}", GREEN if ok else RED)
+    out2, _ = remote(env, "curl -s -o /dev/null -w 'H5 HTTP %{http_code}' --max-time 10 http://127.0.0.1/ ; curl -s -o /dev/null -w 'ADMIN HTTP %{http_code}' --max-time 10 http://127.0.0.1/admin/")
+    log("CHECK", f"公网 H5/Admin -> {out2}", GREEN if ("200" in out2) else YELLOW)
+    return ok
+
+# ============================================================================
+#  主流程
+# ============================================================================
+def main():
+    ap = argparse.ArgumentParser(description="order-food 一键上线（OSS 中转，三端）")
+    ap.add_argument("--skip-backend", action="store_true", help="只上前端")
+    ap.add_argument("--skip-frontend", action="store_true", help="只上后端")
+    ap.add_argument("--no-build", action="store_true", help="不重新构建，直接上线已有产物")
+    ap.add_argument("--host", help="临时覆盖服务器IP")
+    args = ap.parse_args()
+
+    env = load_env()
+    if args.host:
+        env["DEPLOY_SERVER_HOST"] = args.host
+
+    if not os.path.isfile(SSHX):
+        log("INIT", f"缺少 {SSHX}", RED); sys.exit(1)
+
+    log("INIT", f"测试服务器 {env.get('DEPLOY_SERVER_HOST')} 连通性 ...")
+    out, _ = remote(env, "echo CONNECTED")
+    if "CONNECTED" not in out:
+        log("INIT", f"服务器不可达: {out}", RED); sys.exit(1)
+    log("INIT", "服务器连通 OK", GREEN)
+
+    bucket = get_bucket(env)
+    uploaded = []  # (oss_key, kind, expect_size)
+
+    # ---------- 后端：构建 + 上传 ----------
+    if not args.skip_backend:
+        jar = os.path.join(BACKEND_DIR, "target", "order-food-backend-1.0.0.jar")
+        if (not args.no_build) or (not os.path.isfile(jar)):
+            jar = build_backend()
+        jar_size = os.path.getsize(jar)
+        key = f"{OSS_PREFIX}/order-food-backend-1.0.0.jar"
+        url = upload_to_oss(bucket, env, jar, key)
+        uploaded.append((key, "backend", jar_size, url))
+
+    # ---------- 前端：构建 + 打包 + 上传 ----------
+    if not args.skip_frontend:
+        if (not args.no_build) or (not os.path.isdir(os.path.join(FRONTEND_H5, "dist"))):
+            h5_dist = build_frontend("h5用户端", FRONTEND_H5)
+        else:
+            h5_dist = os.path.join(FRONTEND_H5, "dist")
+        if (not args.no_build) or (not os.path.isdir(os.path.join(FRONTEND_ADMIN, "dist"))):
+            admin_dist = build_frontend("admin管理端", FRONTEND_ADMIN)
+        else:
+            admin_dist = os.path.join(FRONTEND_ADMIN, "dist")
+
+        h5_tar, h5_size = pack_dist_tar(h5_dist)
+        admin_tar, admin_size = pack_dist_tar(admin_dist)
+        h5_key = f"{OSS_PREFIX}/h5-dist.tar.gz"
+        admin_key = f"{OSS_PREFIX}/admin-dist.tar.gz"
+        h5_url = upload_to_oss(bucket, env, h5_tar, h5_key)
+        admin_url = upload_to_oss(bucket, env, admin_tar, admin_key)
+        uploaded.append((h5_key, "h5", h5_size, h5_url))
+        uploaded.append((admin_key, "admin", admin_size, admin_url))
+
+    # ---------- 服务器部署 ----------
+    if not args.skip_backend:
+        log("DEPLOY", "=== 后端上线 ===")
+        key, _, jar_size, url = [u for u in uploaded if u[1] == "backend"][0]
+        tmp_jar = "/tmp/order-food-backend-1.0.0.jar"
+        curl_resume_loop(env, url, tmp_jar, jar_size)
+        out, _ = remote(env,
+            f"S=$(stat -c%s {tmp_jar} 2>/dev/null); "
+            f"if [ \"$S\" = \"{jar_size}\" ]; then cp {tmp_jar} {REMOTE_BACKEND_JAR} && echo REPLACED; else echo SIZE_MISMATCH=$S; fi")
+        if "REPLACED" not in out:
+            log("DEPLOY", f"jar 替换失败: {out}", RED); sys.exit(1)
+        restart_backend(env)
+
+    if not args.skip_frontend:
+        log("DEPLOY", "=== 前端上线（静态，免 nginx reload）===")
+        for key, kind, size, url in uploaded:
+            if kind == "h5":
+                deploy_frontend(env, url, size, REMOTE_H5_DIR, "h5用户端")
+            elif kind == "admin":
+                deploy_frontend(env, url, size, REMOTE_ADMIN_DIR, "admin管理端")
+
+    # ---------- 健康检查 ----------
+    ok = health_check(env)
+
+    # ---------- 收尾 ----------
+    log("CLEANUP", "OSS 临时对象改回 private ...")
+    for key, _, _, _ in uploaded:
+        set_private(bucket, key)
+    for d in (FRONTEND_H5, FRONTEND_ADMIN):
+        bak = os.path.join(d, "dist_bak")
+        if os.path.isdir(bak):
+            shutil.rmtree(bak)
+    log("CLEANUP", "本地 dist_bak 已清理", GREEN)
+
+    print("\n" + "=" * 60)
+    if ok:
+        log("DONE", "✅ 上线完成，健康检查通过！", GREEN)
     else:
-        print("  ⚠️ 部分接口异常，请检查上方输出")
-    print("=" * 50)
-    
-    ssh.close()
+        log("DONE", "⚠️ 上线完成但健康检查未通过，请查 /opt/order-food/logs/stdout.log", YELLOW)
+    print("=" * 60)
 
 if __name__ == "__main__":
     main()

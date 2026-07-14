@@ -37,6 +37,8 @@ backend/logs/
 .env
 .env.local
 .deploy.env
+deploy/.deploy.env
+# 旧的临时部署脚本（历史已移出 Git，现统一用 deploy/oss-deploy.py + deploy/sshx.sh）
 deploy/deploy.py
 *.credentials
 .credentials
