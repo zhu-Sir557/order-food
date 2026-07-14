@@ -168,6 +168,19 @@ setup_database() {
         info "  migration_user_balance.sql ✓"
     fi
 
+    # ⚠️ 顺序依赖（本次生产踩坑点）：migration_member_profile.sql 使用
+    #    ADD COLUMN ... AFTER phone，因此 phone 脚本必须先于 profile 脚本执行，
+    #    否则整条 ALTER 报错回滚。务必保证 phone 在 profile 之前导入。
+    warn "member 迁移存在顺序依赖：migration_member_phone.sql 必须先于 migration_member_profile.sql"
+    if [ -f "${SQL_DIR}/migration_member_phone.sql" ]; then
+        ${MYSQL_CONN} order_food < "${SQL_DIR}/migration_member_phone.sql" 2>/dev/null || true
+        info "  migration_member_phone.sql ✓"
+    fi
+    if [ -f "${SQL_DIR}/migration_member_profile.sql" ]; then
+        ${MYSQL_CONN} order_food < "${SQL_DIR}/migration_member_profile.sql" 2>/dev/null || true
+        info "  migration_member_profile.sql ✓"
+    fi
+
     # 验证表数量（set -e 对 $() 中的非零退出码敏感，必须加 || echo "0"）
     TABLE_COUNT=$(${MYSQL_CONN} order_food -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='order_food';" 2>/dev/null || echo "0")
     info "数据库共 ${TABLE_COUNT} 张表"

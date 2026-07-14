@@ -48,6 +48,14 @@ aliyun:
     bucket-name: order-food-zjw
     url-prefix: https://order-food-zjw.oss-cn-shanghai.aliyuncs.com
 
+  # 短信验证码通道（Dypnsapi 号码认证服务）。AK/SK 复用上方 OSS 同一 RAM 用户凭证
+  dypnsapi:
+    access-key-id: __OSS_ACCESS_KEY_ID__
+    access-key-secret: __OSS_ACCESS_KEY_SECRET__
+    sign-name: "恒创联众"
+    template-code: "100001"
+    endpoint: dypnsapi.aliyuncs.com
+
 # File Upload Configuration
 file:
   allowed-types: image/jpeg,image/png,image/gif,image/webp
