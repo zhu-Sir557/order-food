@@ -46,6 +46,7 @@
 ============================================================================
 """
 import argparse
+import hashlib
 import os
 import sys
 import time
@@ -290,14 +291,31 @@ def remote(env, cmd, timeout=600):
 def shell_quote(s):
     return "'" + s.replace("'", "'\\''") + "'"
 
-def curl_resume_loop(env, url, dest, expect_size):
-    """服务端断点续传循环拉取（规避 ssh 长连接被掐 + 网络抖动），返回最终大小字符串"""
+def curl_resume_loop(env, url, dest, expect_size, md5=None):
+    """服务端全量拉取（先清残留、非续传，规避坏文件被当全量），可选 md5 校验。
+
+    修复记录：原实现用 curl -C - 断点续传且不清 /tmp 残留，若上次部署留下
+    同名残缺文件，stat 大小凑巧 >= 期望值就直接当全量用，导致 corrupt jar 上线
+    （2026-07-15 线上 502/500 事故根因）。现改为：每次先 rm -f 残留，再全量
+    curl -fL 下载（同地域内网极快），并在提供 md5 时下载同名 .md5 sidecar 校验。
+    """
+    md5_check = ""
+    if md5:
+        md5url = shell_quote(url + ".md5")
+        md5_check = (
+            f"curl -fsL -o /tmp/_expect.md5 {md5url}; "
+            f"EXPECT=$(cat /tmp/_expect.md5 2>/dev/null | tr -d '\\r\\n' | awk '{{print $1}}'); "
+            f"ACT=$(md5sum {dest} | awk '{{print $1}}'); "
+            f"if [ x$EXPECT != x$ACT ]; then echo \"MD5_MISMATCH expect=$EXPECT actual=$ACT\"; exit 1; fi; "
+        )
     cmd = (
+        f"rm -f {dest}; "
         f"for i in $(seq 1 20); do "
+        f"curl -fsL -o {dest} {shell_quote(url)}; "
         f"S=$(stat -c%s {dest} 2>/dev/null || echo 0); "
-        f"if [ \"$S\" -ge {expect_size} ]; then echo FULL=$S; break; fi; "
-        f"curl -sL -C - -o {dest} {shell_quote(url)}; "
-        f"echo \"attempt $i -> $(stat -c%s {dest} 2>/dev/null)\"; done; "
+        f"if [ \"$S\" -ge {expect_size} ]; then echo OK_SIZE=$S; break; fi; "
+        f"echo \"attempt $i -> $S\"; sleep 2; done; "
+        f"{md5_check}"
         f"echo FINAL=$(stat -c%s {dest} 2>/dev/null)"
     )
     out, _ = remote(env, cmd, timeout=600)
@@ -373,7 +391,11 @@ def main():
         jar_size = os.path.getsize(jar)
         key = f"{OSS_PREFIX}/order-food-backend-1.0.0.jar"
         url = upload_to_oss(bucket, env, jar, key)
-        uploaded.append((key, "backend", jar_size, url))
+        # 上传 md5 sidecar（public-read），供服务器下载后做内容校验
+        jar_md5 = hashlib.md5(open(jar, "rb").read()).hexdigest()
+        bucket.put_object(f"{key}.md5", jar_md5)
+        bucket.put_object_acl(f"{key}.md5", "public-read")
+        uploaded.append((key, "backend", jar_size, url, jar_md5))
 
     # ---------- 前端：构建 + 打包 + 上传 ----------
     if not args.skip_frontend:
@@ -392,25 +414,25 @@ def main():
         admin_key = f"{OSS_PREFIX}/admin-dist.tar.gz"
         h5_url = upload_to_oss(bucket, env, h5_tar, h5_key)
         admin_url = upload_to_oss(bucket, env, admin_tar, admin_key)
-        uploaded.append((h5_key, "h5", h5_size, h5_url))
-        uploaded.append((admin_key, "admin", admin_size, admin_url))
+        uploaded.append((h5_key, "h5", h5_size, h5_url, None))
+        uploaded.append((admin_key, "admin", admin_size, admin_url, None))
 
     # ---------- 服务器部署 ----------
     if not args.skip_backend:
         log("DEPLOY", "=== 后端上线 ===")
-        key, _, jar_size, url = [u for u in uploaded if u[1] == "backend"][0]
+        key, _, jar_size, url, jar_md5 = [u for u in uploaded if u[1] == "backend"][0]
         tmp_jar = "/tmp/order-food-backend-1.0.0.jar"
-        curl_resume_loop(env, url, tmp_jar, jar_size)
+        curl_resume_loop(env, url, tmp_jar, jar_size, md5=jar_md5)
         out, _ = remote(env,
             f"S=$(stat -c%s {tmp_jar} 2>/dev/null); "
             f"if [ \"$S\" = \"{jar_size}\" ]; then cp {tmp_jar} {REMOTE_BACKEND_JAR} && echo REPLACED; else echo SIZE_MISMATCH=$S; fi")
-        if "REPLACED" not in out:
-            log("DEPLOY", f"jar 替换失败: {out}", RED); sys.exit(1)
+        if "REPLACED" not in out or "MD5_MISMATCH" in out:
+            log("DEPLOY", f"jar 替换失败/校验不通过: {out}", RED); sys.exit(1)
         restart_backend(env)
 
     if not args.skip_frontend:
         log("DEPLOY", "=== 前端上线（静态，免 nginx reload）===")
-        for key, kind, size, url in uploaded:
+        for key, kind, size, url, _ in uploaded:
             if kind == "h5":
                 deploy_frontend(env, url, size, REMOTE_H5_DIR, "h5用户端")
             elif kind == "admin":
@@ -421,8 +443,12 @@ def main():
 
     # ---------- 收尾（CI / 本地都会执行：OSS 临时对象改回 private） ----------
     log("CLEANUP", "OSS 临时对象改回 private ...")
-    for key, _, _, _ in uploaded:
+    for key, _, _, _, _ in uploaded:
         set_private(bucket, key)
+        try:
+            set_private(bucket, f"{key}.md5")
+        except Exception:
+            pass
     for d in (FRONTEND_H5, FRONTEND_ADMIN):
         bak = os.path.join(d, "dist_bak")
         if os.path.isdir(bak):
