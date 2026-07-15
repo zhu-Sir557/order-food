@@ -164,3 +164,15 @@ CREATE TABLE `avatar` (
     PRIMARY KEY (`id`),
     KEY `idx_sort` (`sort`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='卡通头像库';
+
+-- --------------------------------------------
+-- Table: merchant_config (商家配置，单行)
+-- --------------------------------------------
+CREATE TABLE IF NOT EXISTS `merchant_config` (
+    `id`                BIGINT       NOT NULL COMMENT '主键，固定为1（单行配置）',
+    `about_us_content` LONGTEXT     DEFAULT NULL COMMENT '关于我们富文本HTML',
+    `contact_phone`     VARCHAR(32)  DEFAULT NULL COMMENT '联系电话（中国大陆手机11位或固话）',
+    `create_time`      DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`      DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商家配置表（单行）';

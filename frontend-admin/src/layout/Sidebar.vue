@@ -43,6 +43,10 @@
         <el-icon><UserFilled /></el-icon>
         <span>会员管理</span>
       </el-menu-item>
+      <el-menu-item index="/merchant-config">
+        <el-icon><Shop /></el-icon>
+        <span>商家设置</span>
+      </el-menu-item>
     </el-menu>
   </el-aside>
 </template>

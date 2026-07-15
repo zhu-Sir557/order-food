@@ -51,6 +51,12 @@ const routes = [
     meta: { title: '我的' },
   },
   {
+    path: '/about-us',
+    name: 'AboutUs',
+    component: () => import('@/views/about-us/index.vue'),
+    meta: { title: '关于我们' },
+  },
+  {
     path: '/login',
     name: 'Login',
     component: () => import('@/views/login/index.vue'),

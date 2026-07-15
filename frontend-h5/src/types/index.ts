@@ -150,3 +150,9 @@ export interface Order {
   createTime: string
   items: OrderItem[]
 }
+
+/** 商家公开配置（H5 关于我们 / 联系商家） */
+export interface MerchantConfigPublic {
+  aboutUsContent?: string
+  contactPhone?: string
+}

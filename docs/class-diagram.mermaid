@@ -1,237 +1,56 @@
 classDiagram
-    %% ===== 实体 =====
-    class Member {
+    class MerchantConfig {
         +Long id
-        +String username
-        +String password
-        +BigDecimal balance
-        +Long tempUserId
-        +String phone
-        +String nickname
-        +String avatar
+        +String aboutUsContent
+        +String contactPhone
         +LocalDateTime createTime
         +LocalDateTime updateTime
-        +Integer deleted
     }
-    class Avatar {
+    class MerchantConfigSaveDTO {
+        +String aboutUsContent
+        +String contactPhone
+    }
+    class MerchantConfigVO {
         +Long id
-        +String ossUrl
-        +Integer sort
-        +LocalDateTime createTime
-        +LocalDateTime updateTime
-        +Integer deleted
-    }
-
-    %% ===== DTO（入参） =====
-    class MemberLoginDTO {
-        +String loginType
-        +String account
-        +String password
-        +String code
-        +String captchaToken
-    }
-    class BindPhoneDTO {
-        +String phone
-        +String code
-        +String captchaToken
-    }
-    class SetPasswordDTO {
-        +String password
-        +String captchaToken
-    }
-    class UpdateNicknameDTO {
-        +String nickname
-    }
-    class UpdateAvatarDTO {
-        +Long avatarId
-    }
-    class SendLoginCodeDTO {
-        +String account
-        +String captchaToken
-    }
-
-    %% ===== VO（出参） =====
-    class MemberLoginVO {
-        +String token
-        +Long memberId
-        +String username
-        +BigDecimal balance
-        +String nickname
-        +String avatar
-    }
-    class MemberInfoVO {
-        +Long memberId
-        +String username
-        +BigDecimal balance
+        +String aboutUsContent
+        +String contactPhone
         +String createTime
-        +String nickname
-        +String avatar
+        +String updateTime
     }
-    class AvatarVO {
-        +Long id
-        +String ossUrl
+    class MerchantConfigPublicVO {
+        +String aboutUsContent
+        +String contactPhone
     }
-    class ChangeLimitVO {
-        +Integer remaining
-    }
-
-    %% ===== Service 接口 =====
-    class MemberAuthService {
-        <<interface>>
-        +login(MemberLoginDTO, HttpServletRequest) MemberLoginVO
-        +register(MemberRegisterDTO, Long) MemberLoginVO
-    }
-    class SmsAuthService {
-        <<interface>>
-        +sendCode(SmsSendRequest, String) void
-        +phoneCodeLogin(String, String, String) MemberLoginVO
-    }
-    class MemberProfileService {
-        <<interface>>
-        +bindPhone(Long, BindPhoneDTO) void
-        +setPassword(Long, SetPasswordDTO) void
-        +updateNickname(Long, UpdateNicknameDTO) ChangeLimitVO
-        +updateAvatar(Long, UpdateAvatarDTO) ChangeLimitVO
-        +sendLoginCode(SendLoginCodeDTO, String) void
-        +listAvatars() List~AvatarVO~
-        +generateDefaultNickname() String
-        +randomAvatarUrl() String
-    }
-    class LoginDefenseService {
-        <<interface>>
-        +isAccountLocked(String) boolean
-        +isIpLocked(String) boolean
-        +onLoginFail(String, String) LoginFailResult
-        +resetOnSuccess(String, String) void
-    }
-    class FileService {
-        <<interface>>
-        +upload(MultipartFile) String
-        +upload(byte[], String) String
-    }
-    class AvatarInitService {
-        <<interface>>
-        +initIfNeeded() void
-    }
-
-    %% ===== Service 实现 =====
-    class MemberAuthServiceImpl {
-        -MemberMapper memberMapper
-        -JwtUtil jwtUtil
-        -BCryptPasswordEncoder passwordEncoder
-        -CaptchaService captchaService
-        -LoginDefenseService loginDefenseService
-        -SmsAuthService smsAuthService
-        -SmsCodeStore smsCodeStore
-        -MemberProfileService memberProfileService
-    }
-    class SmsAuthServiceImpl {
-        -SmsCodeStore smsCodeStore
-        -SmsRateLimiter rateLimiter
-        -MemberMapper memberMapper
-        -JwtUtil jwtUtil
-        -MemberProfileService memberProfileService
-    }
-    class MemberProfileServiceImpl {
-        -MemberMapper memberMapper
-        -AvatarMapper avatarMapper
-        -SmsCodeStore smsCodeStore
-        -SmsRateLimiter rateLimiter
-        -CaptchaService captchaService
-        -StringRedisTemplate redisTemplate
-    }
-    class LoginDefenseServiceImpl {
-        -StringRedisTemplate redisTemplate
-        -LoginDefenseProperties props
-    }
-    class FileServiceImpl {
-        -OSS ossClient
-        -String bucketName
-        -String urlPrefix
-    }
-    class AvatarInitServiceImpl {
-        -FileService fileService
-        -AvatarMapper avatarMapper
-        -int avatarCount
-        -boolean enabled
-    }
-
-    %% ===== 配置 / 限流组件 =====
-    class SmsRateLimitProperties {
-        +int codeTtlSeconds
-        +int intervalSeconds
-        +int phoneDailyLimit
-        +int ipDailyLimit
-        +int failMax
-        +int lockMinutes
-        +int globalDailyLimit
-    }
-    class LoginDefenseProperties {
-        +int loginFailMax
-        +int loginLockMinutes
-    }
-    class SmsRateLimiter {
-        -StringRedisTemplate redisTemplate
-        -SmsRateLimitProperties props
-        +canSend(String, String) RateLimitResult
-        +onSendSuccess(String, String) void
-        +onVerifyFail(String) FailResult
-    }
-
-    %% ===== Mapper =====
-    class MemberMapper {
+    class MerchantConfigMapper {
         <<Mapper>>
     }
-    class AvatarMapper {
-        <<Mapper>>
+    class MerchantConfigService {
+        <<Service>>
+        +getPublic() MerchantConfigPublicVO
+        +getAdmin() MerchantConfigVO
+        +upsert(MerchantConfigSaveDTO) void
     }
-
-    %% ===== Controller =====
-    class H5MemberAuthController {
-        -MemberAuthService memberAuthService
+    class MerchantConfigServiceImpl {
+        +getPublic() MerchantConfigPublicVO
+        +getAdmin() MerchantConfigVO
+        +upsert(MerchantConfigSaveDTO) void
     }
-    class MemberProfileController {
-        -MemberProfileService memberProfileService
+    class MerchantConfigController {
+        <<RestController>>
+        -MerchantConfigService service
+        +getConfig() Result~MerchantConfigVO~
+        +save(POST) Result~Void~
+        +update(PUT) Result~Void~
     }
-
-    %% ===== 接口实现关系 =====
-    MemberAuthServiceImpl ..|> MemberAuthService
-    SmsAuthServiceImpl ..|> SmsAuthService
-    MemberProfileServiceImpl ..|> MemberProfileService
-    LoginDefenseServiceImpl ..|> LoginDefenseService
-    FileServiceImpl ..|> FileService
-    AvatarInitServiceImpl ..|> AvatarInitService
-
-    %% ===== 依赖关系 =====
-    MemberAuthServiceImpl --> MemberMapper
-    MemberAuthServiceImpl --> JwtUtil
-    MemberAuthServiceImpl --> CaptchaService
-    MemberAuthServiceImpl --> LoginDefenseService
-    MemberAuthServiceImpl --> SmsAuthService
-    MemberAuthServiceImpl --> SmsCodeStore
-    MemberAuthServiceImpl --> MemberProfileService
-
-    SmsAuthServiceImpl --> SmsCodeStore
-    SmsAuthServiceImpl --> SmsRateLimiter
-    SmsAuthServiceImpl --> MemberMapper
-    SmsAuthServiceImpl --> JwtUtil
-    SmsAuthServiceImpl --> MemberProfileService
-
-    MemberProfileServiceImpl --> MemberMapper
-    MemberProfileServiceImpl --> AvatarMapper
-    MemberProfileServiceImpl --> SmsCodeStore
-    MemberProfileServiceImpl --> SmsRateLimiter
-    MemberProfileServiceImpl --> CaptchaService
-
-    FileServiceImpl --> OSS
-    AvatarInitServiceImpl --> FileService
-    AvatarInitServiceImpl --> AvatarMapper
-
-    SmsRateLimiter --> SmsRateLimitProperties
-    LoginDefenseServiceImpl --> LoginDefenseProperties
-
-    MemberMapper ..> Member
-    AvatarMapper ..> Avatar
-
-    H5MemberAuthController --> MemberAuthService
-    MemberProfileController --> MemberProfileService
+    class H5MerchantConfigController {
+        <<RestController>>
+        -MerchantConfigService service
+        +getConfig() Result~MerchantConfigPublicVO~
+    }
+    MerchantConfigService <|.. MerchantConfigServiceImpl
+    MerchantConfigServiceImpl ..> MerchantConfigMapper : uses
+    MerchantConfigController ..> MerchantConfigService : calls
+    H5MerchantConfigController ..> MerchantConfigService : calls
+    MerchantConfigSaveDTO ..> MerchantConfig : maps to
+    MerchantConfig ..> MerchantConfigVO : maps to
+    MerchantConfig ..> MerchantConfigPublicVO : maps to (public only)

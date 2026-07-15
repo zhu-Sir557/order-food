@@ -75,9 +75,24 @@
     </van-cell-group>
 
     <van-cell-group inset class="menu-group">
-      <van-cell title="关于我们" icon="info-o" />
-      <van-cell title="联系商家" icon="phone-o" />
+      <van-cell title="关于我们" icon="info-o" is-link @click="goAboutUs" />
+      <van-cell
+        v-if="contactPhone"
+        title="联系商家"
+        icon="phone-o"
+        is-link
+        @click="onContactClick"
+      />
     </van-cell-group>
+
+    <!-- 联系商家操作面板 -->
+    <van-action-sheet
+      v-model:show="showContactSheet"
+      :actions="contactActions"
+      cancel-text="取消"
+      description="联系商家"
+      @select="onContactAction"
+    />
 
     <!-- 昵称编辑弹窗 -->
     <EditNicknamePopup
@@ -107,10 +122,23 @@ import router from '@/router'
 import { showToast, showImagePreview } from 'vant'
 import { useUserStore } from '@/store/modules/user'
 import { useMemberStore } from '@/store/modules/member'
+import { getMerchantConfig } from '@/api/merchant-config'
 import EditNicknamePopup from '@/components/EditNicknamePopup.vue'
 
 const userStore = useUserStore()
 const memberStore = useMemberStore()
+
+/** 商家联系电话（为空时隐藏「联系商家」入口） */
+const contactPhone = ref('')
+
+/** 联系商家操作面板显隐 */
+const showContactSheet = ref(false)
+
+/** 联系商家动作面板选项 */
+const contactActions: { name: string; value: string }[] = [
+  { name: '拨打电话', value: 'call' },
+  { name: '复制号码', value: 'copy' },
+]
 
 /** 昵称编辑弹窗显隐 */
 const showNickPopup = ref(false)
@@ -176,11 +204,66 @@ const handleLogout = async (): Promise<void> => {
   showToast('已退出登录')
 }
 
+/** 跳转到「关于我们」 */
+const goAboutUs = (): void => {
+  router.push('/about-us')
+}
+
+/** 点击「联系商家」兜底：号码为空时不弹出面板 */
+const onContactClick = (): void => {
+  if (!contactPhone.value) return
+  showContactSheet.value = true
+}
+
+/** 联系商家动作面板选择回调 */
+const onContactAction = async (action: { name?: string; value?: string }): Promise<void> => {
+  const value = action.value
+  if (value === 'call') {
+    window.location.href = `tel:${contactPhone.value}`
+  } else if (value === 'copy') {
+    await copyPhone(contactPhone.value)
+  }
+}
+
+/** 复制联系电话到剪贴板（带降级方案） */
+const copyPhone = async (phone: string): Promise<void> => {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(phone)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = phone
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(textarea)
+      if (!ok) throw new Error('copy failed')
+    }
+    showToast(`已复制：${phone}`)
+  } catch {
+    showToast('复制失败，请手动复制')
+  }
+}
+
+/** 拉取商家公开配置（用于「联系商家」显隐与号码） */
+const fetchMerchantConfig = async (): Promise<void> => {
+  try {
+    const res = await getMerchantConfig()
+    contactPhone.value = res.contactPhone || ''
+  } catch {
+    // 业务错误已由请求拦截器统一提示
+  }
+}
+
 onMounted(() => {
   // 刷新会员信息（含昵称/头像/脱敏手机号）
   if (memberStore.isLoggedIn) {
     memberStore.refreshInfo()
   }
+  // 拉取商家配置（联系电话 / 关于我们入口）
+  fetchMerchantConfig()
 })
 </script>
 

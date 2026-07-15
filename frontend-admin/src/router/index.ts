@@ -60,6 +60,12 @@ const routes: RouteRecordRaw[] = [
         name: 'Member',
         component: () => import('@/views/member/index.vue'),
         meta: { title: '会员管理', icon: 'UserFilled' }
+      },
+      {
+        path: 'merchant-config',
+        name: 'MerchantConfig',
+        component: () => import('@/views/merchant-config/index.vue'),
+        meta: { title: '商家设置', icon: 'Shop' }
       }
     ]
   }

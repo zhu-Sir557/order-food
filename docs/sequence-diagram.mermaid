@@ -1,235 +1,53 @@
-%% ============================================================
-%% 1) 统一登录：四种组合分支
-%% ============================================================
 sequenceDiagram
-    actor U as 用户(H5)
-    participant C as H5MemberAuthController
-    participant S as MemberAuthServiceImpl
-    participant Cap as CaptchaService
-    participant Def as LoginDefenseService
-    participant M as MemberMapper
-    participant JW as JwtUtil
-    participant SM as SmsCodeStore
-    participant SA as SmsAuthService
+    participant A as Admin前端(商家设置页)
+    participant R as admin/api/request.ts
+    participant C as MerchantConfigController
+    participant S as MerchantConfigService
+    participant M as MerchantConfigMapper
+    participant DB as MySQL
 
-    U->>C: POST /api/h5/member/login (loginType, account, password/code, captchaToken)
-    C->>S: login(dto, request)
-    S->>Cap: verifyAndConsumeCaptcha(captchaToken)
-    alt 滑块无效
-        Cap-->>S: false
-        S-->>C: BizException(CAPTCHA_INVALID)
-        C-->>U: 400 验证码无效
+    A->>R: POST /api/admin/merchant-config {aboutUsContent, contactPhone}
+    R->>C: 请求拦截器注入 Authorization: Bearer <admin_token>
+    C->>S: upsert(dto)
+    S->>M: getById(1)
+    M->>DB: SELECT * FROM merchant_config WHERE id=1
+    DB-->>M: 行 或 null
+    alt 不存在(id=1 首次)
+        S->>M: setId(1) + save
+        M->>DB: INSERT INTO merchant_config ...
+    else 已存在
+        S->>M: updateById(...)
+        M->>DB: UPDATE merchant_config SET ... WHERE id=1
     end
-    S->>Def: isAccountLocked(normalizedAccount) / isIpLocked(ip)
-    alt 已锁定
-        Def-->>S: true
-        S-->>C: BizException(LOGIN_LOCKED)
-        C-->>U: 429 账号已锁定
-    end
-    alt loginType == ACCOUNT_PASSWORD
-        S->>M: selectOne(username=account, deleted=0)
-        M-->>S: member
-        S->>S: BCrypt matches(password, member.password)
-        alt 匹配失败
-            S->>Def: onLoginFail(account, ip)
-            S-->>C: BizException(账户名或密码错误)
-        end
-    else loginType == PHONE_PASSWORD
-        S->>M: selectOne(phone=account, deleted=0)
-        M-->>S: member
-        alt member.password 为 null
-            S-->>C: BizException(PASSWORD_NOT_SET)
-        else 匹配失败
-            S->>Def: onLoginFail(phone, ip)
-            S-->>C: BizException(账户名或密码错误)
-        end
-    else loginType == PHONE_CODE
-        S->>SA: phoneCodeLogin(phone, code, ip)
-        SA->>SM: get(phone)
-        alt 验证码错误
-            SA->>Def: onLoginFail(phone, ip)
-            SA-->>C: BizException(SMS_CODE_ERROR/LOCKED)
-        else 正确
-            SA->>SM: delete(phone)
-            SA->>M: 按 phone 匹配/自动注册(若需)
-        end
-    else loginType == ACCOUNT_CODE
-        S->>M: selectOne(username=account, deleted=0)
-        M-->>S: member
-        alt member.phone 为 null
-            S-->>C: BizException(ACCOUNT_NO_PHONE)
-        else
-            S->>SM: get(member.phone) / delete(member.phone)
-            alt 验证码错误
-                S->>Def: onLoginFail(account, ip)
-                S-->>C: BizException(SMS_CODE_ERROR)
-            end
-        end
-    end
-    S->>Def: resetOnSuccess(account, ip)
-    S->>JW: generateToken(memberId, role=MEMBER, 720h)
-    JW-->>S: token
-    S-->>C: MemberLoginVO(token, username, balance, nickname, avatar)
-    C-->>U: 200 + VO
+    C-->>R: Result.success()
+    R-->>A: 解包 data → ElMessage.success('保存成功')
 
-%% ============================================================
-%% 2) 绑定手机（仅首次，需登录态 + 滑块 + 短信码）
-%% ============================================================
 sequenceDiagram
-    actor U as 用户(H5)
-    participant C as MemberProfileController
-    participant P as MemberProfileServiceImpl
-    participant M as MemberMapper
-    participant SM as SmsCodeStore
-    participant RL as SmsRateLimiter
-    participant Cap as CaptchaService
-    participant I as CustomerAuthInterceptor
+    participant U as 用户
+    participant H as H5(关于我们页 / 我的页)
+    participant R as h5/api/request.ts
+    participant C as H5MerchantConfigController
+    participant S as MerchantConfigService
+    participant M as MerchantConfigMapper
+    participant DB as MySQL
 
-    U->>C: POST /api/h5/member/bind-phone (phone, code, captchaToken)
-    C->>I: 解析 memberId (Authorization)
-    C->>P: bindPhone(memberId, dto)
-    P->>Cap: verifyAndConsumeCaptcha(captchaToken)
-    alt 滑块无效
-        P-->>C: BizException(CAPTCHA_INVALID)
-    end
-    P->>M: selectOne(phone=dto.phone, deleted=0)
-    alt 该手机号已被其他账号注册
-        P-->>C: BizException(PHONE_ALREADY_REGISTERED)
-    end
-    P->>M: selectById(memberId)
-    alt 当前账号 phone 非空（非首次）
-        P-->>C: BizException(PHONE_ALREADY_BOUND)
-    end
-    P->>SM: get(phone)
-    alt 验证码不存在/过期
-        P-->>C: BizException(SMS_CODE_EXPIRED)
-    else 验证码错误
-        P->>RL: onVerifyFail(phone)
-        P-->>C: BizException(SMS_CODE_ERROR)
-    else 正确
-        P->>SM: delete(phone)
-        P->>M: update phone
-        P-->>C: success
-    end
-    C-->>U: 200
+    Note over U,H: 打开 /about-us
+    H->>R: GET /api/h5/merchant-config
+    R->>C: 无 token（公开接口）
+    C->>S: getPublic()
+    S->>M: getById(1)
+    M->>DB: SELECT about_us_content, contact_phone FROM merchant_config WHERE id=1
+    DB-->>M: 行 或 null
+    S-->>C: MerchantConfigPublicVO{aboutUsContent, contactPhone}
+    C-->>R: Result.success(publicVO)
+    R-->>H: publicVO
+    H->>H: v-html 渲染 aboutUsContent（空则空态+Toast）
 
-%% ============================================================
-%% 3) 设密码（仅 password 为 null 用户，需滑块）
-%% ============================================================
-sequenceDiagram
-    actor U as 用户(H5)
-    participant C as MemberProfileController
-    participant P as MemberProfileServiceImpl
-    participant M as MemberMapper
-    participant Cap as CaptchaService
-    participant I as CustomerAuthInterceptor
-
-    U->>C: POST /api/h5/member/set-password (password, captchaToken)
-    C->>I: 解析 memberId
-    C->>P: setPassword(memberId, dto)
-    P->>Cap: verifyAndConsumeCaptcha(captchaToken)
-    P->>M: selectById(memberId)
-    alt member.password 非空
-        P-->>C: BizException(PASSWORD_ALREADY_SET)
-    end
-    alt 长度 < password.min-length
-        P-->>C: BizException(PARAM_ERROR)
-    end
-    P->>M: update password = BCrypt(password)
-    P-->>C: success
-    C-->>U: 200
-
-%% ============================================================
-%% 4) 注册默认资料（账号注册 & 手机注册统一生成昵称+头像）
-%% ============================================================
-sequenceDiagram
-    actor U as 用户(H5)
-    participant R as 注册入口(MemberAuthServiceImpl / SmsAuthServiceImpl)
-    participant P as MemberProfileService
-    participant M as MemberMapper
-    participant JW as JwtUtil
-
-    U->>R: register / 手机验证码自动注册
-    R->>P: generateDefaultNickname()
-    P-->>R: "美食家" + RandomUtil.randomString(8)
-    R->>P: randomAvatarUrl()
-    alt avatar 表已有数据
-        P->>M: selectOne(random order)
-        P-->>R: ossUrl
-    else avatar 表为空（初始化未完成）
-        P-->>R: null（留空，初始化后由用户首次设置）
-    end
-    R->>M: insert(member + nickname + avatar)
-    R->>JW: generateToken(...)
-    R-->>U: MemberLoginVO(含 nickname, avatar)
-
-%% ============================================================
-%% 5) 头像库初始化（CommandLineRunner，幂等）
-%% ============================================================
-sequenceDiagram
-    actor App as Spring 容器启动
-    participant A as AvatarInitServiceImpl
-    participant F as FileService
-    participant M as AvatarMapper
-    participant OSS as 阿里云 OSS
-
-    App->>A: initIfNeeded() @PostConstruct/CommandLineRunner
-    alt avatar.init.enabled == false
-        A-->>App: 跳过
-    end
-    A->>M: count() 是否已达 avatarCount
-    alt 已存在 >= avatarCount 条
-        A-->>App: 幂等跳过
-    end
-    loop i = 1..12
-        A->>A: 程序生成卡通 SVG 字节（纯字符串，无依赖）
-        A->>F: upload(bytes, "svg")
-        F->>OSS: putObject(bucket, key, bytes)
-        OSS-->>F: url
-        F-->>A: ossUrl
-        A->>M: insert(Avatar(ossUrl, sort=i))
-    end
-    A-->>App: 初始化完成（日志）
-
-%% ============================================================
-%% 6) 防暴破：发送侧全局日额度 + 登录侧失败锁定
-%% ============================================================
-sequenceDiagram
-    actor U as 用户(H5)
-    participant SC as SmsController / MemberProfileController
-    participant RL as SmsRateLimiter
-    participant R as StringRedisTemplate
-    participant S as MemberAuthServiceImpl
-    participant Def as LoginDefenseService
-
-    Note over SC,RL: 发送侧（/api/h5/sms/send 或 send-login-code）
-    U->>SC: 发送验证码请求
-    SC->>RL: canSend(phone, ip)
-    RL->>R: get sms:send:limit:global:{yyyyMMdd}
-    alt >= globalDailyLimit(500)
-        RL-->>SC: locked(global)
-        SC-->>U: BizException(RATE_LIMIT_GLOBAL_DAILY)
-    end
-    RL-->>SC: 其余阈值判定（间隔/单号/单IP/锁定）
-    SC->>RL: onSendSuccess(phone, ip)
-    RL->>R: inc sms:send:limit:global:{yyyyMMdd}
-
-    Note over U,Def: 登录侧（统一登录任一分支凭据失败）
-    U->>S: 登录请求
-    S->>Def: isAccountLocked(account) / isIpLocked(ip)
-    alt 已锁定
-        Def-->>S: true
-        S-->>U: BizException(LOGIN_LOCKED)
-    end
-    S->>S: 凭据校验
-    alt 失败
-        S->>Def: onLoginFail(account, ip)
-        Def->>R: inc login:fail:{account} (TTL=lockMinutes)
-        Def->>R: inc login:fail:ip:{ip}
-        alt 达 loginFailMax(5)
-            Def->>R: set login:lock:{account} / login:lock:ip:{ip} (TTL=lockMinutes)
-        end
-        S-->>U: BizException(凭据错误)
-    else 成功
-        S->>Def: resetOnSuccess(account, ip)
-    end
+    Note over U,H: 我的页点「联系商家」
+    U->>H: 点击
+    H->>H: 弹 van-action-sheet(拨打电话 / 复制)
+    U->>H: 选「拨打电话」
+    H->>H: window.location.href = "tel:" + contactPhone
+    U->>H: 选「复制」
+    H->>H: navigator.clipboard.writeText(phone)
+    H->>H: showToast('已复制联系方式')
