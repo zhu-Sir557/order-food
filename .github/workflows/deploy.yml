@@ -1,0 +1,75 @@
+# =============================================================================
+#  order-food 自动部署流水线
+#  触发：push 到 main 分支，或手动 workflow_dispatch
+#  流程：构建三端（后端 jar + h5 + admin） -> 传阿里云 OSS -> 服务器内网 curl 拉取
+#  说明：CI 不走 ssh 直传大文件，仅把产物传 OSS（HTTPS），服务器用 curl 内网拉取。
+# =============================================================================
+name: Deploy to ECS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    # 把 7 个 repo secret 映射为同名环境变量，供脚本子进程继承。
+    # 安全红线：secret 仅以 ${{ secrets.X }} 形式引用，绝不写死、绝不 echo。
+    env:
+      OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+      OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+      OSS_BUCKET_NAME: ${{ secrets.OSS_BUCKET_NAME }}
+      OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+      DEPLOY_SERVER_HOST: ${{ secrets.DEPLOY_SERVER_HOST }}
+      DEPLOY_SERVER_USER: ${{ secrets.DEPLOY_SERVER_USER }}
+      DEPLOY_SERVER_PASSWORD: ${{ secrets.DEPLOY_SERVER_PASSWORD }}
+      CI: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('backend/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2-
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            frontend-h5/package-lock.json
+            frontend-admin/package-lock.json
+
+      - name: Install deps (frontend-h5)
+        run: npm ci
+        working-directory: frontend-h5
+
+      - name: Install deps (frontend-admin)
+        run: npm ci
+        working-directory: frontend-admin
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install oss2
+        run: pip install oss2
+
+      - name: Deploy (OSS transfer + remote pull)
+        # env 已注入 secret；--ci 显式进入 CI 模式（CI=true 也会自动进入）
+        run: python3 deploy/oss-deploy.py --ci

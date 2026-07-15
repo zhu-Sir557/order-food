@@ -5,21 +5,40 @@
  order-food 一键上线脚本（OSS 中转，三端全量）
 ----------------------------------------------------------------------------
  适用：本地改完代码后，一条命令把 后端 + h5用户端 + admin管理端 全部上线。
+       同样可在 CI（GitHub Actions）中以 --ci 模式运行。
+
+ 模式：
+   本地模式（默认）：
+     - 后端用 ./mvnw.sh -o package（离线、禁用 clean）
+     - 前端 vite build 前先 mv dist dist_bak（绕开沙箱安全删除）
+    CI 模式（--ci 显式，或环境变量 CI=true 自动）：
+     - 后端用系统 mvn -DskipTests package（在线、去 -o、去 clean）
+     - 前端先 vue-tsc --noEmit 类型检查（失败即停），再 node vite build
 
  流程：
-   1. 本地构建（后端 mvnw 离线打包 / 前端 vite build，自动绕开沙箱安全删除）
-   2. 把产物（jar + 两个 dist tar.gz）传 OSS（阿里云上海，同地域内网极快）
+   1. 构建（后端 mvn / 前端 vite build，自动绕开沙箱安全删除）
+   2. 把产物（jar + 两个 dist tar.gz）传 OSS（阿里云，同地域内网极快）
    3. 服务器通过 sshx.sh 执行：拉取 OSS -> 替换 -> 重启（后端 systemd / 前端静态免重启）
    4. 收尾：OSS 临时对象改 private、清本地 dist_bak
    5. 健康检查
 
+ 配置加载顺序（兼容本地与 CI）：
+   1. 先尝试读同目录 .deploy.env（本地开发优先）；
+   2. 文件不存在则从 os.environ 读（CI，已注入同名 secret）；
+   3. 两者合并（环境变量覆盖文件值），CI 无文件也能跑。
+
  依赖：
    - 同目录 .deploy.env（含服务器密码、OSS AK/SK、桶名）—— 已被 .gitignore 排除
-   - 同目录 sshx.sh（服务器 SSH 包装，密码从 .deploy.env 注入）
-   - 本地 Python 装了 oss2（managed python 已自带 2.19.1）
+   - 同目录 sshx.sh（服务器 SSH 包装，密码从环境注入）
+   - 本地 / CI 的 Python 装了 oss2
+
+ 安全红线：
+   - 任何位置不得 print/echo OSS_ACCESS_KEY_SECRET、DEPLOY_SERVER_PASSWORD 等密钥；
+   - 仅允许打印 OSS 公网 URL（不含密钥）与部署进度。
 
  用法：
-   python3 deploy/oss-deploy.py                 # 三端全量上线
+   python3 deploy/oss-deploy.py                 # 三端全量上线（本地）
+   python3 deploy/oss-deploy.py --ci            # CI 模式（也可由 CI=true 自动）
    python3 deploy/oss-deploy.py --skip-backend  # 只上前端
    python3 deploy/oss-deploy.py --skip-frontend # 只上后端
    python3 deploy/oss-deploy.py --no-build      # 不重新构建，直接用已有产物上线
@@ -55,9 +74,21 @@ REMOTE_H5_DIR = "/opt/order-food/frontend/h5"
 REMOTE_ADMIN_DIR = "/opt/order-food/frontend/admin"
 SYSTEMD_SVC = "order-food"
 
-# ---------- 本地工具链 ----------
-JAVA_HOME = r"C:\programming_software\jdk-21.0.9"
-NODE = r"C:\Users\zhujw2\.workbuddy\binaries\node\versions\22.22.2\node.exe"
+# ---------- 本地工具链默认值（本地 Windows 开发机路径；
+#     CI 模式下由环境变量覆盖并走 PATH 默认值） ----------
+DEFAULT_JAVA_HOME = r"C:\programming_software\jdk-21.0.9"
+DEFAULT_NODE = r"C:\Users\zhujw2\.workbuddy\binaries\node\versions\22.22.2\node.exe"
+
+# ---------- 必需配置项（缺失即硬失败） ----------
+REQUIRED_VARS = [
+    "OSS_ACCESS_KEY_ID",
+    "OSS_ACCESS_KEY_SECRET",
+    "OSS_BUCKET_NAME",
+    "OSS_ENDPOINT",
+    "DEPLOY_SERVER_HOST",
+    "DEPLOY_SERVER_USER",
+    "DEPLOY_SERVER_PASSWORD",
+]
 
 # ---------- 颜色 ----------
 GREEN = "\033[32m"; YELLOW = "\033[33m"; RED = "\033[31m"; CYAN = "\033[36m"; RESET = "\033[0m"
@@ -68,29 +99,84 @@ def log(step, msg, color=CYAN):
 #  配置读取
 # ============================================================================
 def load_env():
-    env = {}
-    if not os.path.isfile(ENV_FILE):
-        log("ENV", f"找不到 {ENV_FILE}，请复制 .deploy.env.example 并填写", RED)
+    """读取部署配置。
+
+    加载顺序：先读同目录 .deploy.env（本地优先），再从 os.environ 读取
+    （CI 注入的同名 secret），两者合并——环境变量覆盖文件值。文件不存在时
+    纯依赖环境变量，CI 无文件也能跑。缺失任一必需项即硬失败并给出清晰报错。
+
+    安全：绝不在任何日志中输出密钥值（仅输出变量名）。
+    """
+    file_env = {}
+    if os.path.isfile(ENV_FILE):
+        with open(ENV_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                file_env[k.strip()] = v.strip()
+
+    # 合并：文件为底，环境变量（CI）覆盖
+    merged = dict(file_env)
+    for k in REQUIRED_VARS:
+        val = os.environ.get(k)
+        if val:
+            merged[k] = val
+
+    # 兼容旧字段：DEPLOY_SERVER_PASS 回退为 DEPLOY_SERVER_PASSWORD
+    if not merged.get("DEPLOY_SERVER_PASSWORD") and merged.get("DEPLOY_SERVER_PASS"):
+        merged["DEPLOY_SERVER_PASSWORD"] = merged["DEPLOY_SERVER_PASS"]
+
+    # 缺失校验（仅打印变量名，不打印值）
+    missing = [k for k in REQUIRED_VARS if not merged.get(k)]
+    if missing:
+        log("ENV", f"缺少必需配置项: {', '.join(missing)}", RED)
+        if os.path.isfile(ENV_FILE):
+            log("ENV", "请检查 .deploy.env 中以上变量是否已填写", RED)
+        else:
+            log("ENV", "本地请复制 .deploy.env.example 为 .deploy.env 并填写；"
+                       "CI 请在仓库 Settings -> Secrets 配置同名变量", RED)
         sys.exit(1)
-    with open(ENV_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            env[k.strip()] = v.strip()
-    return env
+    return merged
+
+# ============================================================================
+#  工具链解析
+# ============================================================================
+def resolve_toolchain(ci):
+    """解析 JAVA_HOME / node 路径。
+
+    CI 模式：走 PATH 默认值（setup-java / setup-node 已将工具写入环境）。
+    本地模式：保留 Windows 硬编码默认，并允许通过环境变量覆盖。
+    """
+    if ci:
+        java_home = os.environ.get("JAVA_HOME")      # 可能为空 -> 交给系统 mvn 探测
+        node = os.environ.get("NODE", "node")        # PATH 中的 node
+    else:
+        java_home = os.environ.get("JAVA_HOME", DEFAULT_JAVA_HOME)
+        node = os.environ.get("NODE", DEFAULT_NODE)
+    return java_home, node
 
 # ============================================================================
 #  本地构建
 # ============================================================================
-def build_backend():
-    log("BUILD", "构建后端 (./mvnw.sh -o package，禁用 clean) ...")
-    mvnw = os.path.join(BACKEND_DIR, "mvnw.sh")
-    env = dict(os.environ)
-    env["JAVA_HOME"] = JAVA_HOME
-    cmd = ["bash", mvnw, "-o", "-DskipTests", "package"]
-    r = subprocess.run(cmd, cwd=BACKEND_DIR, env=env)
+def build_backend(ci):
+    if ci:
+        log("BUILD", "构建后端 (系统 mvn -DskipTests package，在线、去 -o、去 clean) ...")
+        java_home, _ = resolve_toolchain(ci)
+        cmd = ["mvn", "-DskipTests", "package"]
+        env = dict(os.environ)
+        if java_home:
+            env["JAVA_HOME"] = java_home
+        r = subprocess.run(cmd, cwd=BACKEND_DIR, env=env)
+    else:
+        log("BUILD", "构建后端 (./mvnw.sh -o package，禁用 clean) ...")
+        java_home, _ = resolve_toolchain(ci)
+        mvnw = os.path.join(BACKEND_DIR, "mvnw.sh")
+        env = dict(os.environ)
+        env["JAVA_HOME"] = java_home
+        cmd = ["bash", mvnw, "-o", "-DskipTests", "package"]
+        r = subprocess.run(cmd, cwd=BACKEND_DIR, env=env)
     if r.returncode != 0:
         log("BUILD", "后端构建失败", RED); sys.exit(1)
     jar = os.path.join(BACKEND_DIR, "target", "order-food-backend-1.0.0.jar")
@@ -99,27 +185,59 @@ def build_backend():
     log("BUILD", f"后端构建完成: {os.path.getsize(jar)//1024//1024} MB", GREEN)
     return jar
 
-def build_frontend(name, fe_dir):
-    log("BUILD", f"构建前端 {name} (vite build) ...")
-    # 沙箱安全删除会拦截清空 dist（>50文件），先 mv 走再 build
-    dist = os.path.join(fe_dir, "dist")
-    dist_bak = os.path.join(fe_dir, "dist_bak")
-    if os.path.isdir(dist):
-        if os.path.isdir(dist_bak):
-            shutil.rmtree(dist_bak)
-        os.rename(dist, dist_bak)
-    vite = os.path.join(fe_dir, "node_modules", ".bin", "vite")
-    if not os.path.isfile(vite):
-        log("BUILD", f"{name} 未安装依赖 (缺 node_modules/.bin/vite)，请先 npm install", RED)
+def typecheck_frontend(name, fe_dir, node):
+    """CI 模式：vue-tsc --noEmit 类型检查，失败即停（非零退出）。"""
+    log("TYPECHECK", f"类型检查前端 {name} (vue-tsc --noEmit) ...")
+    vue_tsc = os.path.join(fe_dir, "node_modules", ".bin", "vue-tsc")
+    if not os.path.isfile(vue_tsc):
+        log("TYPECHECK", f"{name} 未安装依赖 (缺 node_modules/.bin/vue-tsc)，请先 npm ci", RED)
         sys.exit(1)
-    cmd = [NODE, vite, "build"]
+    cmd = [node, vue_tsc, "--noEmit"]
     r = subprocess.run(cmd, cwd=fe_dir)
     if r.returncode != 0:
-        log("BUILD", f"{name} 构建失败", RED); sys.exit(1)
-    if not os.path.isdir(dist):
-        log("BUILD", f"{name} 未生成 dist", RED); sys.exit(1)
-    log("BUILD", f"{name} 构建完成", GREEN)
-    return dist
+        log("TYPECHECK", f"{name} 类型检查失败", RED); sys.exit(1)
+    log("TYPECHECK", f"{name} 类型检查通过", GREEN)
+
+def build_frontend(name, fe_dir, ci):
+    _, node = resolve_toolchain(ci)
+    if ci:
+        # CI 模式：先类型检查，再构建（node 走 PATH）
+        typecheck_frontend(name, fe_dir, node)
+        log("BUILD", f"构建前端 {name} (node vite build) ...")
+        vite = os.path.join(fe_dir, "node_modules", ".bin", "vite")
+        if not os.path.isfile(vite):
+            log("BUILD", f"{name} 未安装依赖 (缺 node_modules/.bin/vite)，请先 npm ci", RED)
+            sys.exit(1)
+        cmd = [node, vite, "build"]
+        r = subprocess.run(cmd, cwd=fe_dir)
+        if r.returncode != 0:
+            log("BUILD", f"{name} 构建失败", RED); sys.exit(1)
+        dist = os.path.join(fe_dir, "dist")
+        if not os.path.isdir(dist):
+            log("BUILD", f"{name} 未生成 dist", RED); sys.exit(1)
+        log("BUILD", f"{name} 构建完成", GREEN)
+        return dist
+    else:
+        # 本地模式：保留沙箱安全删除绕行（先 mv 走 dist 再 build）
+        log("BUILD", f"构建前端 {name} (vite build) ...")
+        dist = os.path.join(fe_dir, "dist")
+        dist_bak = os.path.join(fe_dir, "dist_bak")
+        if os.path.isdir(dist):
+            if os.path.isdir(dist_bak):
+                shutil.rmtree(dist_bak)
+            os.rename(dist, dist_bak)
+        vite = os.path.join(fe_dir, "node_modules", ".bin", "vite")
+        if not os.path.isfile(vite):
+            log("BUILD", f"{name} 未安装依赖 (缺 node_modules/.bin/vite)，请先 npm install", RED)
+            sys.exit(1)
+        cmd = [node, vite, "build"]
+        r = subprocess.run(cmd, cwd=fe_dir)
+        if r.returncode != 0:
+            log("BUILD", f"{name} 构建失败", RED); sys.exit(1)
+        if not os.path.isdir(dist):
+            log("BUILD", f"{name} 未生成 dist", RED); sys.exit(1)
+        log("BUILD", f"{name} 构建完成", GREEN)
+        return dist
 
 def pack_dist_tar(dist_dir):
     """把 dist 打成 tar.gz 返回 (路径, 大小)"""
@@ -142,6 +260,7 @@ def upload_to_oss(bucket, env, local_path, oss_key):
     bucket.put_object_from_file(oss_key, local_path)
     # 临时 public-read，方便服务器直接 curl（收尾改回 private）
     bucket.put_object_acl(oss_key, "public-read")
+    # 仅拼接公网 URL（不含任何密钥）
     host = env["OSS_ENDPOINT"].split("//")[-1]
     url = f"https://{bucket.bucket_name}.{host}/{oss_key}"
     log("OSS", f"已设为 public-read，URL: {url}", GREEN)
@@ -160,7 +279,10 @@ def remote(env, cmd, timeout=600):
     host = env.get("DEPLOY_SERVER_HOST")
     full = ["bash", SSHX, f"{env.get('DEPLOY_SERVER_USER','root')}@{host}", cmd]
     try:
-        r = subprocess.run(full, capture_output=True, text=True, timeout=timeout)
+        # 把合并后的配置（含服务器密码）透传给 sshx，同时保留系统 PATH 等环境
+        sub_env = dict(os.environ)
+        sub_env.update(env)
+        r = subprocess.run(full, capture_output=True, text=True, timeout=timeout, env=sub_env)
         return r.stdout.strip(), r.returncode
     except subprocess.TimeoutExpired:
         return "", 124
@@ -220,7 +342,12 @@ def main():
     ap.add_argument("--skip-frontend", action="store_true", help="只上后端")
     ap.add_argument("--no-build", action="store_true", help="不重新构建，直接上线已有产物")
     ap.add_argument("--host", help="临时覆盖服务器IP")
+    ap.add_argument("--ci", action="store_true",
+                    help="CI 模式（也可由环境变量 CI=true 自动开启）：系统 mvn 在线构建、前端 vue-tsc 类型检查")
     args = ap.parse_args()
+
+    # CI 模式：显式 --ci 或由 CI=true 环境变量自动开启
+    ci = args.ci or os.environ.get("CI", "").lower() == "true"
 
     env = load_env()
     if args.host:
@@ -229,20 +356,20 @@ def main():
     if not os.path.isfile(SSHX):
         log("INIT", f"缺少 {SSHX}", RED); sys.exit(1)
 
-    log("INIT", f"测试服务器 {env.get('DEPLOY_SERVER_HOST')} 连通性 ...")
+    log("INIT", f"模式: {'CI' if ci else '本地'} | 测试服务器 {env.get('DEPLOY_SERVER_HOST')} 连通性 ...")
     out, _ = remote(env, "echo CONNECTED")
     if "CONNECTED" not in out:
         log("INIT", f"服务器不可达: {out}", RED); sys.exit(1)
     log("INIT", "服务器连通 OK", GREEN)
 
     bucket = get_bucket(env)
-    uploaded = []  # (oss_key, kind, expect_size)
+    uploaded = []  # (oss_key, kind, expect_size, url)
 
     # ---------- 后端：构建 + 上传 ----------
     if not args.skip_backend:
         jar = os.path.join(BACKEND_DIR, "target", "order-food-backend-1.0.0.jar")
         if (not args.no_build) or (not os.path.isfile(jar)):
-            jar = build_backend()
+            jar = build_backend(ci)
         jar_size = os.path.getsize(jar)
         key = f"{OSS_PREFIX}/order-food-backend-1.0.0.jar"
         url = upload_to_oss(bucket, env, jar, key)
@@ -251,11 +378,11 @@ def main():
     # ---------- 前端：构建 + 打包 + 上传 ----------
     if not args.skip_frontend:
         if (not args.no_build) or (not os.path.isdir(os.path.join(FRONTEND_H5, "dist"))):
-            h5_dist = build_frontend("h5用户端", FRONTEND_H5)
+            h5_dist = build_frontend("h5用户端", FRONTEND_H5, ci)
         else:
             h5_dist = os.path.join(FRONTEND_H5, "dist")
         if (not args.no_build) or (not os.path.isdir(os.path.join(FRONTEND_ADMIN, "dist"))):
-            admin_dist = build_frontend("admin管理端", FRONTEND_ADMIN)
+            admin_dist = build_frontend("admin管理端", FRONTEND_ADMIN, ci)
         else:
             admin_dist = os.path.join(FRONTEND_ADMIN, "dist")
 
@@ -292,7 +419,7 @@ def main():
     # ---------- 健康检查 ----------
     ok = health_check(env)
 
-    # ---------- 收尾 ----------
+    # ---------- 收尾（CI / 本地都会执行：OSS 临时对象改回 private） ----------
     log("CLEANUP", "OSS 临时对象改回 private ...")
     for key, _, _, _ in uploaded:
         set_private(bucket, key)
