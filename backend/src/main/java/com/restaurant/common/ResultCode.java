@@ -81,7 +81,16 @@ public enum ResultCode {
     AVATAR_CHANGE_LIMIT(429, "今日头像修改次数已达上限"),
 
     /** 头像不存在 */
-    AVATAR_NOT_FOUND(400, "头像不存在");
+    AVATAR_NOT_FOUND(400, "头像不存在"),
+
+    /** 消息不存在 */
+    MESSAGE_NOT_FOUND(404, "消息不存在"),
+
+    /** 消息不可撤回（已超时或已撤回） */
+    MESSAGE_REVOKE_NOT_ALLOWED(400, "该消息不可撤回（已超时或已撤回）"),
+
+    /** 指定用户发送时接收人不能为空 */
+    MESSAGE_RECEIVER_EMPTY(400, "指定用户发送时接收人不能为空");
 
     private final int code;
     private final String message;

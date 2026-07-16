@@ -1,56 +1,163 @@
 classDiagram
-    class MerchantConfig {
+    %% ---------- 数据实体 ----------
+    class Message {
         +Long id
-        +String aboutUsContent
-        +String contactPhone
+        +String type           %% BROADCAST/SPECIFIED/SYSTEM
+        +String receiverScope  %% ALL/SPECIFIED
+        +Long senderId         %% admin_user.id
+        +String title
+        +String content
+        +String imageUrl
+        +String linkUrl
+        +String status         %% SENT/REVOKED
+        +LocalDateTime revocableBefore
         +LocalDateTime createTime
         +LocalDateTime updateTime
     }
-    class MerchantConfigSaveDTO {
-        +String aboutUsContent
-        +String contactPhone
-    }
-    class MerchantConfigVO {
+
+    class MessageReceiver {
         +Long id
-        +String aboutUsContent
-        +String contactPhone
-        +String createTime
-        +String updateTime
+        +Long messageId
+        +Long receiverId       %% member.id 或 temp_user.id
+        +String receiverType   %% MEMBER/TEMP
+        +Integer isRead        %% 0/1
+        +LocalDateTime readTime
+        +LocalDateTime createTime
     }
-    class MerchantConfigPublicVO {
-        +String aboutUsContent
-        +String contactPhone
+
+    %% ---------- DTO / VO ----------
+    class MessageSendDTO {
+        +String type
+        +String title
+        +String content
+        +String imageUrl
+        +String linkUrl
+        +List~Long~ receiverIds  %% 仅 SPECIFIED：member.id 列表
     }
-    class MerchantConfigMapper {
-        <<Mapper>>
+
+    class MessageVO {
+        +Long id
+        +String type
+        +String receiverScope
+        +Long senderId
+        +String title
+        +String content
+        +String imageUrl
+        +String linkUrl
+        +String status
+        +Boolean revocable
+        +LocalDateTime createTime
+        +Boolean isRead
     }
-    class MerchantConfigService {
-        <<Service>>
-        +getPublic() MerchantConfigPublicVO
-        +getAdmin() MerchantConfigVO
-        +upsert(MerchantConfigSaveDTO) void
+
+    class MessagePushVO {
+        +Long id
+        +String type
+        +String title
+        +String content
+        +String imageUrl
+        +String linkUrl
+        +String status
+        +LocalDateTime createTime
     }
-    class MerchantConfigServiceImpl {
-        +getPublic() MerchantConfigPublicVO
-        +getAdmin() MerchantConfigVO
-        +upsert(MerchantConfigSaveDTO) void
+
+    class MessageUnreadVO {
+        +Long unreadCount
     }
-    class MerchantConfigController {
-        <<RestController>>
-        -MerchantConfigService service
-        +getConfig() Result~MerchantConfigVO~
-        +save(POST) Result~Void~
-        +update(PUT) Result~Void~
+
+    %% ---------- 服务与组件 ----------
+    class MessageService {
+        <<interface>>
+        +send(MessageSendDTO, Long senderId) MessageVO
+        +adminList(page, size, type, scope, status, keyword) PageResult~MessageVO~
+        +adminDetail(Long id) MessageVO
+        +revoke(Long id, Long adminId) void
+        +listForUser(Long receiverId, String receiverType, page, size) PageResult~MessageVO~
+        +detailForUser(Long id, Long receiverId, String receiverType) MessageVO
+        +markRead(Long id, Long receiverId, String receiverType) void
+        +markReadBatch(List~Long~ ids, Long receiverId, String receiverType) void
+        +unreadCount(Long receiverId, String receiverType) Long
     }
-    class H5MerchantConfigController {
-        <<RestController>>
-        -MerchantConfigService service
-        +getConfig() Result~MerchantConfigPublicVO~
+
+    class MessageServiceImpl {
+        -MessageMapper messageMapper
+        -MessageReceiverMapper receiverMapper
+        -MessagePushService pushService
+        +send() MessageVO
+        +adminList() PageResult~MessageVO~
+        +adminDetail() MessageVO
+        +revoke() void
+        +listForUser() PageResult~MessageVO~
+        +detailForUser() MessageVO
+        +markRead() void
+        +markReadBatch() void
+        +unreadCount() Long
     }
-    MerchantConfigService <|.. MerchantConfigServiceImpl
-    MerchantConfigServiceImpl ..> MerchantConfigMapper : uses
-    MerchantConfigController ..> MerchantConfigService : calls
-    H5MerchantConfigController ..> MerchantConfigService : calls
-    MerchantConfigSaveDTO ..> MerchantConfig : maps to
-    MerchantConfig ..> MerchantConfigVO : maps to
-    MerchantConfig ..> MerchantConfigPublicVO : maps to (public only)
+
+    class MessagePushService {
+        -SimpMessagingTemplate messagingTemplate
+        +pushToUser(String principalName, MessagePushVO) void
+        +pushBroadcast(MessagePushVO) void
+        +pushRevoke(Long messageId, MessagePushVO) void
+    }
+
+    class MessageAdminController {
+        -MessageService messageService
+        +send(@Valid MessageSendDTO) Result~MessageVO~
+        +list(...) Result~PageResult~MessageVO~~
+        +detail(Long id) Result~MessageVO~
+        +revoke(Long id) Result~Void~
+    }
+
+    class MessageH5Controller {
+        -MessageService messageService
+        +list(...) Result~PageResult~MessageVO~~
+        +detail(Long id) Result~MessageVO~
+        +read(Long id) Result~Void~
+        +readBatch(List~Long~ ids) Result~Void~
+        +unreadCount() Result~MessageUnreadVO~
+    }
+
+    class WebSocketConfig {
+        +registerStompEndpoints(registry)
+        +configureMessageBroker(registry)
+        +configureClientInboundChannel(reg)
+    }
+
+    class WebSocketAuthHandshakeInterceptor {
+        +beforeHandshake(req, res, wsHandler, attributes) boolean
+    }
+
+    class MessageHandshakeHandler {
+        +determineUser(req, wsHandler, attributes) Principal
+    }
+
+    class WebSocketUserPrincipal {
+        +String name   %% M:123 / C:456
+        +Long userId
+        +String role   %% MEMBER / CUSTOMER
+        +getName() String
+    }
+
+    class WebSocketAuthChannelInterceptor {
+        +preSend(channel, message) Message
+    }
+
+    %% ---------- 关系 ----------
+    MessageServiceImpl ..|> MessageService
+    MessageServiceImpl --> MessageMapper : 读写
+    MessageServiceImpl --> MessageReceiverMapper : 读写
+    MessageServiceImpl --> MessagePushService : 实时推送
+    MessageAdminController --> MessageService
+    MessageH5Controller --> MessageService
+    MessagePushService --> SimpMessagingTemplate : 依赖(外部)
+
+    WebSocketConfig --> WebSocketAuthHandshakeInterceptor : 注册
+    WebSocketConfig --> MessageHandshakeHandler : 注册
+    WebSocketAuthHandshakeInterceptor ..> WebSocketUserPrincipal : 构建
+    MessageHandshakeHandler ..> WebSocketUserPrincipal : 产出
+    WebSocketUserPrincipal ..|> Principal
+
+    Message "1" *-- "0..*" MessageReceiver : 指定展开/Broadcast已读标记
+    MessageServiceImpl ..> MessageVO : 组装
+    MessagePushService ..> MessagePushVO : 推送

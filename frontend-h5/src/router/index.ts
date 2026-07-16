@@ -51,6 +51,18 @@ const routes = [
     meta: { title: '我的' },
   },
   {
+    path: '/message',
+    name: 'MessageCenter',
+    component: () => import('@/views/message/index.vue'),
+    meta: { title: '消息中心' },
+  },
+  {
+    path: '/message/:id',
+    name: 'MessageDetail',
+    component: () => import('@/views/message/detail.vue'),
+    meta: { title: '消息详情' },
+  },
+  {
     path: '/about-us',
     name: 'AboutUs',
     component: () => import('@/views/about-us/index.vue'),

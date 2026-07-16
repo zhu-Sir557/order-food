@@ -14,7 +14,9 @@
     "pinia": "^2.1.0",
     "vant": "^4.9.0",
     "axios": "^1.7.0",
-    "dayjs": "^1.11.0"
+    "dayjs": "^1.11.0",
+    "@stomp/stompjs": "^7.0.0",
+    "sockjs-client": "^1.6.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

@@ -23,7 +23,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .excludePathPatterns("/api/admin/login", "/api/admin/auth/**");
 
         registry.addInterceptor(customerAuthInterceptor)
-                .addPathPatterns("/api/h5/orders/**");
+                .addPathPatterns("/api/h5/orders/**", "/api/h5/message/**");
         // register 不再需要临时用户认证，tempUserId 可选
 
         registry.addInterceptor(memberAuthInterceptor)

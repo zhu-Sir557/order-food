@@ -66,6 +66,12 @@ const routes: RouteRecordRaw[] = [
         name: 'MerchantConfig',
         component: () => import('@/views/merchant-config/index.vue'),
         meta: { title: '商家设置', icon: 'Shop' }
+      },
+      {
+        path: 'message-push',
+        name: 'MessagePush',
+        component: () => import('@/views/message/push.vue'),
+        meta: { title: '消息推送', icon: 'Bell' }
       }
     ]
   }

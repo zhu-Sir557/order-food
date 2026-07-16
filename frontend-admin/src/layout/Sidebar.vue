@@ -47,6 +47,10 @@
         <el-icon><Shop /></el-icon>
         <span>商家设置</span>
       </el-menu-item>
+      <el-menu-item index="/message-push">
+        <el-icon><Bell /></el-icon>
+        <span>消息推送</span>
+      </el-menu-item>
     </el-menu>
   </el-aside>
 </template>

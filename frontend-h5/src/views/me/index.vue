@@ -60,6 +60,11 @@
     <!-- 通用功能菜单 -->
     <van-cell-group inset class="menu-group">
       <van-cell title="我的订单" icon="orders-o" is-link @click="router.push('/order/list')" />
+      <van-cell title="消息中心" icon="comment-o" is-link @click="router.push('/message')">
+        <template #value>
+          <van-badge :content="messageStore.unreadCount" :show-zero="false" />
+        </template>
+      </van-cell>
       <van-cell title="桌号信息" icon="location-o" :value="userStore.tableName || '未选择'" @click="router.push('/cart')" />
     </van-cell-group>
 
@@ -122,11 +127,13 @@ import router from '@/router'
 import { showToast, showImagePreview } from 'vant'
 import { useUserStore } from '@/store/modules/user'
 import { useMemberStore } from '@/store/modules/member'
+import { useMessageStore } from '@/store/modules/message'
 import { getMerchantConfig } from '@/api/merchant-config'
 import EditNicknamePopup from '@/components/EditNicknamePopup.vue'
 
 const userStore = useUserStore()
 const memberStore = useMemberStore()
+const messageStore = useMessageStore()
 
 /** 商家联系电话（为空时隐藏「联系商家」入口） */
 const contactPhone = ref('')
@@ -264,6 +271,8 @@ onMounted(() => {
   }
   // 拉取商家配置（联系电话 / 关于我们入口）
   fetchMerchantConfig()
+  // 刷新消息未读红点
+  messageStore.refreshUnread()
 })
 </script>
 

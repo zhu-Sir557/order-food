@@ -1,53 +1,95 @@
-sequenceDiagram
-    participant A as Admin前端(商家设置页)
-    participant R as admin/api/request.ts
-    participant C as MerchantConfigController
-    participant S as MerchantConfigService
-    participant M as MerchantConfigMapper
-    participant DB as MySQL
+%% ============================================================
+%% 消息模块调用时序图（4 个）
+%% 配套文档：docs/system-design-message-module.md 第 D 节
+%% ============================================================
 
-    A->>R: POST /api/admin/merchant-config {aboutUsContent, contactPhone}
-    R->>C: 请求拦截器注入 Authorization: Bearer <admin_token>
-    C->>S: upsert(dto)
-    S->>M: getById(1)
-    M->>DB: SELECT * FROM merchant_config WHERE id=1
-    DB-->>M: 行 或 null
-    alt 不存在(id=1 首次)
-        S->>M: setId(1) + save
-        M->>DB: INSERT INTO merchant_config ...
-    else 已存在
-        S->>M: updateById(...)
-        M->>DB: UPDATE merchant_config SET ... WHERE id=1
+%% ---------- D.1 ① 后台发送 ----------
+sequenceDiagram
+    participant A as 后台管理员
+    participant C as MessageAdminController
+    participant S as MessageServiceImpl
+    participant MM as MessageMapper
+    participant RM as MessageReceiverMapper
+    participant P as MessagePushService
+    participant ST as SimpMessagingTemplate
+
+    A->>C: POST /api/admin/message/send (MessageSendDTO)
+    C->>S: send(dto, adminId)
+    S->>MM: insert(Message) 状态=SENT, revocableBefore=now+5m
+    alt type = SPECIFIED
+        S->>RM: batchInsert(N 行 message_receiver, is_read=0)
+        loop 每个在线接收人
+            S->>P: pushToUser("M:"+receiverId, MessagePushVO)
+            P->>ST: convertAndSendToUser(...)
+        end
+    else type = BROADCAST
+        S->>P: pushBroadcast(MessagePushVO)
+        P->>ST: convertAndSend("/topic/messages/broadcast", ...)
     end
-    C-->>R: Result.success()
-    R-->>A: 解包 data → ElMessage.success('保存成功')
+    S-->>C: MessageVO
+    C-->>A: Result<MessageVO> (code=200)
 
+%% ---------- D.2 ② H5 实时接收 ----------
 sequenceDiagram
-    participant U as 用户
-    participant H as H5(关于我们页 / 我的页)
-    participant R as h5/api/request.ts
-    participant C as H5MerchantConfigController
-    participant S as MerchantConfigService
-    participant M as MerchantConfigMapper
-    participant DB as MySQL
+    participant H as H5 客户端
+    participant I as WebSocketAuthHandshakeInterceptor
+    participant Hh as MessageHandshakeHandler
+    participant BR as MessageBroker
+    participant ST as SimpMessagingTemplate
+    participant S as message store(Pinia)
 
-    Note over U,H: 打开 /about-us
-    H->>R: GET /api/h5/merchant-config
-    R->>C: 无 token（公开接口）
-    C->>S: getPublic()
-    S->>M: getById(1)
-    M->>DB: SELECT about_us_content, contact_phone FROM merchant_config WHERE id=1
-    DB-->>M: 行 或 null
-    S-->>C: MerchantConfigPublicVO{aboutUsContent, contactPhone}
-    C-->>R: Result.success(publicVO)
-    R-->>H: publicVO
-    H->>H: v-html 渲染 aboutUsContent（空则空态+Toast）
+    H->>I: WS 握手 /ws (Header Authorization: Bearer <token>)
+    I->>I: JwtUtil 解析 → role + userId
+    alt 校验失败
+        I-->>H: 拒绝握手(401) → 跳登录
+    else 校验通过
+        I->>I: attributes.put("wsUser", WebSocketUserPrincipal("M:/C:"+id))
+        I->>Hh: determineUser() 返回 Principal
+        Hh-->>H: 握手成功
+        H->>BR: SUBSCRIBE /user/queue/messages
+        H->>BR: SUBSCRIBE /topic/messages/broadcast
+        ST-->>BR: 推送 MessagePushVO
+        BR-->>H: MESSAGE 帧
+        H->>S: onMessage(vo)
+        S->>S: unreadCount++ / 触发 Toast
+    end
 
-    Note over U,H: 我的页点「联系商家」
-    U->>H: 点击
-    H->>H: 弹 van-action-sheet(拨打电话 / 复制)
-    U->>H: 选「拨打电话」
-    H->>H: window.location.href = "tel:" + contactPhone
-    U->>H: 选「复制」
-    H->>H: navigator.clipboard.writeText(phone)
-    H->>H: showToast('已复制联系方式')
+%% ---------- D.3 ③ 拉历史与已读 ----------
+sequenceDiagram
+    participant H as H5 客户端
+    participant C as MessageH5Controller
+    participant S as MessageServiceImpl
+    participant MM as MessageMapper
+    participant RM as MessageReceiverMapper
+
+    H->>C: GET /api/h5/message/list?page&size (Bearer)
+    C->>S: listForUser(receiverId, receiverType, page, size)
+    S->>MM: 查询(BROADCAST 窗口内) UNION (SPECIFIED 命中 receiver)
+    S->>S: 计算每条 isRead（广播: EXISTS read标记；指定: message_receiver.is_read）
+    S-->>C: PageResult<MessageVO>
+    C-->>H: Result<PageResult<MessageVO>>
+    H->>H: 渲染列表 + 红点
+    H->>C: PUT /api/h5/message/read-batch [可见 ids]
+    C->>S: markReadBatch(ids, receiverId, receiverType)
+    S->>RM: upsert message_receiver(is_read=1, read_time=now)
+    S-->>C: void
+    C-->>H: Result<Void> (红点清零)
+
+%% ---------- D.4 ④ 点击详情已读回写 ----------
+sequenceDiagram
+    participant H as H5 客户端
+    participant C as MessageH5Controller
+    participant S as MessageServiceImpl
+    participant MM as MessageMapper
+    participant RM as MessageReceiverMapper
+
+    H->>C: GET /api/h5/message/{id} (Bearer)
+    C->>S: detailForUser(id, receiverId, receiverType)
+    S->>MM: select message (status=REVOKED 则前端标记已撤回)
+    S-->>C: MessageVO(isRead)
+    C-->>H: Result<MessageVO> → 渲染详情/图片/链接
+    H->>C: PUT /api/h5/message/{id}/read
+    C->>S: markRead(id, receiverId, receiverType)
+    S->>RM: upsert message_receiver(is_read=1, read_time=now)
+    S-->>C: void
+    C-->>H: Result<Void>
