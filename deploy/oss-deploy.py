@@ -340,6 +340,56 @@ def deploy_frontend(env, url, expect_size, remote_dir, name):
     log("DEPLOY", f"{name}: {out}", GREEN)
 
 # ============================================================================
+#  消息模块增量：建表 + Nginx /ws 转发（幂等，可重复跑）
+# ============================================================================
+def apply_server_extras(env, bucket):
+    """CI 部署末尾的增量步骤（仅消息模块需要）：
+       1) 上传 migration_message.sql 到 OSS -> 服务器拉取 -> 导入 MySQL
+          （密码取自 /opt/order-food/.credentials，SQL 用 IF NOT EXISTS 幂等）
+       2) 上传 order-food.conf 到 OSS -> 服务器覆盖 -> nginx -t 通过则 reload
+    两步均失败不阻断整体上线（前端静态/后端 jar 已就位），仅告警，由健康检查与人工复核兜底。
+    """
+    # 1) DB 迁移
+    sql_src = os.path.join(SCRIPT_DIR, "sql", "migration_message.sql")
+    if os.path.isfile(sql_src):
+        key = f"{OSS_PREFIX}/migration_message.sql"
+        url = upload_to_oss(bucket, env, sql_src, key)
+        tmp = "/tmp/migration_message.sql"
+        sql_md5 = hashlib.md5(open(sql_src, "rb").read()).hexdigest()
+        bucket.put_object(f"{key}.md5", sql_md5)
+        bucket.put_object_acl(f"{key}.md5", "public-read")
+        curl_resume_loop(env, url, tmp, os.path.getsize(sql_src), md5=sql_md5)
+        cmd = (
+            "PW=$(grep 'MySQL Password:' /opt/order-food/.credentials 2>/dev/null | awk -F': ' '{print $2}'); "
+            "if [ -n \"$PW\" ]; then "
+            "mysql -u root -p\"$PW\" order_food < /tmp/migration_message.sql 2>&1 && echo DB_MIGRATED || echo DB_MIGRATE_FAIL; "
+            "else echo NO_DB_PW; fi"
+        )
+        out, _ = remote(env, cmd, timeout=120)
+        log("MIGRATE", f"消息模块建表: {out}", GREEN if "DB_MIGRATED" in out else YELLOW)
+        set_private(bucket, key)
+        set_private(bucket, f"{key}.md5")
+    else:
+        log("MIGRATE", f"未找到 {sql_src}，跳过建表", YELLOW)
+
+    # 2) Nginx /ws 转发
+    conf_src = os.path.join(SCRIPT_DIR, "nginx", "order-food.conf")
+    if os.path.isfile(conf_src):
+        key = f"{OSS_PREFIX}/order-food.conf"
+        url = upload_to_oss(bucket, env, conf_src, key)
+        tmp = "/tmp/order-food.conf"
+        curl_resume_loop(env, url, tmp, os.path.getsize(conf_src))
+        cmd = (
+            "cp /tmp/order-food.conf /etc/nginx/conf.d/order-food.conf && "
+            "nginx -t 2>&1 && systemctl reload nginx && echo NGINX_RELOADED || echo NGINX_RELOAD_FAIL"
+        )
+        out, _ = remote(env, cmd, timeout=120)
+        log("NGINX", f"/ws 转发: {out}", GREEN if "NGINX_RELOADED" in out else YELLOW)
+        set_private(bucket, key)
+    else:
+        log("NGINX", f"未找到 {conf_src}", YELLOW)
+
+# ============================================================================
 #  健康检查
 # ============================================================================
 def health_check(env):
@@ -437,6 +487,9 @@ def main():
                 deploy_frontend(env, url, size, REMOTE_H5_DIR, "h5用户端")
             elif kind == "admin":
                 deploy_frontend(env, url, size, REMOTE_ADMIN_DIR, "admin管理端")
+
+    # ---------- 消息模块增量：建表 + Nginx /ws 转发 ----------
+    apply_server_extras(env, bucket)
 
     # ---------- 健康检查 ----------
     ok = health_check(env)

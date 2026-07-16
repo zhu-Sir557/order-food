@@ -167,6 +167,10 @@ setup_database() {
         ${MYSQL_CONN} order_food < "${SQL_DIR}/migration_user_balance.sql" 2>/dev/null || true
         info "  migration_user_balance.sql ✓"
     fi
+    if [ -f "${SQL_DIR}/migration_message.sql" ]; then
+        ${MYSQL_CONN} order_food < "${SQL_DIR}/migration_message.sql" 2>/dev/null || true
+        info "  migration_message.sql ✓"
+    fi
 
     # ⚠️ 顺序依赖（本次生产踩坑点）：migration_member_profile.sql 使用
     #    ADD COLUMN ... AFTER phone，因此 phone 脚本必须先于 profile 脚本执行，
