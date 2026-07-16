@@ -111,7 +111,7 @@ class MessageServiceTest {
     void send_specified_emptyReceiver() {
         BizException ex = assertThrows(BizException.class, () -> service.send(specifiedDto(List.of()), 1L));
         assertEquals(ResultCode.MESSAGE_RECEIVER_EMPTY.getCode(), ex.getCode());
-        verify(messageMapper, never()).insert(any());
+        verify(messageMapper, never()).insert(any(Message.class));
     }
 
     @Test
@@ -156,7 +156,7 @@ class MessageServiceTest {
 
         BizException ex = assertThrows(BizException.class, () -> service.revoke(1L, 1L));
         assertEquals(ResultCode.MESSAGE_REVOKE_NOT_ALLOWED.getCode(), ex.getCode());
-        verify(messageMapper, never()).updateById(any());
+        verify(messageMapper, never()).updateById(any(Message.class));
     }
 
     @Test

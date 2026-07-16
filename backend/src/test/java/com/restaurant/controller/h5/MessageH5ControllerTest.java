@@ -70,7 +70,7 @@ class MessageH5ControllerTest {
         MessageVO vo = new MessageVO();
         vo.setId(1L);
         vo.setTitle("t");
-        when(messageService.detailForUser(anyLong(), anyString(), anyString())).thenReturn(vo);
+        when(messageService.detailForUser(anyLong(), anyLong(), anyString())).thenReturn(vo);
         mockMvc.perform(get("/api/h5/message/1").requestAttr("memberId", 5L))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
