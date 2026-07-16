@@ -62,11 +62,7 @@
       <van-cell title="我的订单" icon="orders-o" is-link @click="router.push('/order/list')" />
       <van-cell title="消息中心" icon="comment-o" is-link @click="router.push('/message')">
         <template #value>
-          <van-badge
-            class="msg-badge"
-            :content="messageStore.unreadCount"
-            :show-zero="false"
-          />
+          <span v-if="messageStore.unreadCount > 0" class="msg-unread-badge">{{ messageStore.unreadCount > 99 ? '99+' : messageStore.unreadCount }}</span>
         </template>
       </van-cell>
       <van-cell title="桌号信息" icon="location-o" :value="userStore.tableName || '未选择'" @click="router.push('/cart')" />
@@ -380,21 +376,19 @@ onMounted(() => {
 }
 
 /* 消息中心未读数量角标：确保 1~3 位数字完整显示不被裁切 */
-.msg-badge {
+.msg-unread-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-}
-
-.msg-badge :deep(.van-badge__content) {
   min-width: 18px;
-  padding: 0 8px;
   height: 18px;
-  line-height: 18px;
+  padding: 0 6px;
   border-radius: 9px;
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1;
+  color: #fff;
+  background-color: #ee0a24;
   white-space: nowrap;
-  text-align: center;
   box-sizing: border-box;
 }
 </style>
