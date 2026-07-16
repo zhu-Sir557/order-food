@@ -1,6 +1,6 @@
 <template>
   <div class="message-page">
-    <van-nav-bar title="消息中心" />
+    <van-nav-bar title="消息中心" left-arrow @click-left="onBack" />
 
     <van-empty v-if="!loading && messages.length === 0" description="暂无消息" />
 
@@ -70,6 +70,11 @@ const formatTime = (t?: string): string => (t ? t.slice(0, 10) : '')
 
 const openDetail = (m: MessageVO): void => {
   router.push(`/message/${m.id}`)
+}
+
+/** 返回上一页（「我的」页） */
+const onBack = (): void => {
+  router.back()
 }
 
 onMounted(() => {
